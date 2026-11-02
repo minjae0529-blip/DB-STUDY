@@ -1,8 +1,8 @@
-# 🗄️ DB-STUDY (MySQL & Java JDBC 프로젝트)
+# 🗄️ DB-STUDY (MySQL 데이터 분석 & Java JDBC 아키텍처 포트폴리오)
 
-대한민국인공지능아카데미 11기 **MySQL 데이터베이스 기초·심화(`Ch01`~`Ch04`)부터 IntelliJ Java JDBC 연동 및 커스텀 ORM 매퍼(`Repository<T>`, `ResultSetMetaData`) 구현**까지 정리한 데이터베이스 종합 학습 & 실습 프로젝트 레포지토리입니다.
+대한민국인공지능아카데미 11기 **MySQL 데이터베이스 기초·심화(`Ch01`~`Ch07`) 실전 데이터 분석부터 IntelliJ Java JDBC 연동 및 커스텀 ORM 매퍼(`Repository<T>`, `ResultSetMetaData`) 구현**까지 정리한 데이터베이스 종합 학습 & 실습 포트폴리오 레포지토리입니다.
 
-실제 배달 플랫폼 도메인인 **'한입배달(`hanip_delivery`)'** 데이터베이스(고객 30명 · 가게 15곳 · 메뉴 70개 · 라이더 8명 · 주문 563건 · 주문상세 1,060건 · 리뷰 260건)를 기반으로 SQL 데이터 분석과 Java 백엔드 DB 연동을 함께 다룹니다.
+실제 배달 플랫폼 도메인인 **'한입배달(`hanip_delivery`)'** 데이터베이스(고객 30명 · 가게 15곳 · 메뉴 70개 · 라이더 8명 · 주문 563건 · 주문상세 1,060건 · 리뷰 260건)를 기반으로 **운영·정산·마케팅·CS팀의 실무 데이터 추출 요구사항 해결(SQL)**과 **Java 백엔드 DB 연동 아키텍처(JDBC)**를 함께 다룹니다.
 
 ---
 
@@ -11,7 +11,7 @@
 | 항목 | 내용 | 비고 |
 | :--- | :--- | :--- |
 | **DBMS** | MySQL 8.0 / 9.x | `utf8mb4` 인코딩, 관계형 데이터베이스(RDBMS) |
-| **DB Tool** | MySQL Workbench / IntelliJ Database Tool | 스키마 설계, ERD 확인, SQL 스크립트 실행 |
+| **DB Tool** | IntelliJ Database Tool / MySQL Workbench | 스키마 설계, ERD 확인, SQL 콘솔 및 스크립트 실행 |
 | **Language & Build** | Java 21 (LTS), Apache Maven | JDBC 연동 애플리케이션 (`jdbc-practice`) |
 | **JDBC Library** | `mysql-connector-j` (9.7.0), Lombok (1.18.48) | `DriverManager`, `PreparedStatement`, `ResultSet`, `ResultSetMetaData` |
 | **Architecture** | **Singleton + Generic Repository Pattern** | `DBConfig` ↔ `DatabaseProvider` ↔ `Repository<T>` ↔ `Entity` |
@@ -27,24 +27,16 @@ DB-STUDY/
 │   ├── seed.sql                               # 실전 샘플 데이터 (주문 563건, 상세 1,060건 등)
 │   └── README.md                              # 데이터베이스 ERD 및 테이블 명세서
 │
-├── chapters/                                  # 📚 [MySQL 단계별 실습 커리큘럼 (Ch01 ~ Ch04)]
+├── chapters/                                  # 📚 [MySQL 단계별 실습 커리큘럼 (Ch01 ~ Ch07)]
 │   ├── ch01-first-database/                   # [Ch01] DB 기본 개념, SHOW / USE / DESC / LIMIT 탐색
-│   │   ├── setup.sql                          # hanip_delivery01 DB 생성 스크립트
-│   │   ├── lecture.sql / practice.md / answers.sql
-│   │   └── README.md                          # Ch01 상세 교안
 │   ├── ch02-select-basics/                    # [Ch02] SELECT, WHERE, 연산자, ORDER BY, LIMIT/OFFSET
-│   │   ├── setup.sql                          # hanip_delivery02 DB 생성 스크립트
-│   │   ├── lecture.sql / practice.md / answers.sql
-│   │   └── README.md                          # Ch02 상세 교안
 │   ├── ch03-functions/                        # [Ch03] 문자열·숫자·날짜 함수, CASE WHEN, IFNULL/COALESCE
-│   │   ├── setup.sql                          # hanip_delivery03 DB 생성 스크립트
-│   │   ├── lecture.sql / practice.md / answers.sql
-│   │   └── README.md                          # Ch03 상세 교안
-│   └── ch04-aggregation/                      # [Ch04] 집계 함수(COUNT/SUM/AVG), GROUP BY, HAVING, 조건부 집계
-│       ├── setup.sql                          # hanip_delivery04 DB 생성 스크립트
-│       ├── study01.sql                        # 직접 작성한 집계 & GROUP BY 실습 SQL 스크립트 ✨
-│       ├── lecture.sql / practice.md / answers.sql
-│       └── README.md                          # Ch04 상세 교안
+│   ├── ch04-aggregation/                      # [Ch04] 집계 함수, GROUP BY, HAVING, WITH ROLLUP, 피벗 리포트
+│   │   ├── study01.sql                        # ✨ 직접 작성한 집계 실습 & 연습문제 1~12번 전체 풀이 스크립트
+│   │   └── setup.sql / lecture.sql / practice.md / answers.sql
+│   ├── ch05-join/                             # [Ch05] INNER JOIN, LEFT JOIN, 다중 테이블 조인, Fan-out 방지
+│   ├── ch06-subquery-window/                  # [Ch06] 서브쿼리, CTE(WITH), UNION ALL, 윈도우 함수(RANK/SUM OVER)
+│   └── ch07-ddl-constraints/                  # [Ch07] CREATE/ALTER TABLE, 데이터 타입, 6대 제약조건(PK/FK/UNIQUE/CHECK)
 │
 ├── jdbc-practice/                             # ☕ [IntelliJ Java ↔ MySQL JDBC 연동 프로젝트] 🌟
 │   ├── pom.xml                                # Maven 설정 (mysql-connector-j, Lombok)
@@ -64,7 +56,7 @@ DB-STUDY/
 │           └── CustomerRepository.java        # customers 전체/단건/이름 검색(findAllByLikename)
 │
 ├── docs/                                      # 📖 커리큘럼 설계서(CURRICULUM.md) 및 SQL 작성 규칙(CONVENTIONS.md)
-└── README.md                                  # 프로젝트 통합 문서
+└── README.md                                  # 프로젝트 통합 포트폴리오 문서
 ```
 
 ---
@@ -128,7 +120,7 @@ erDiagram
 
 ---
 
-# 📚 Part 1. MySQL 챕터별 핵심 개념 & 예제 쿼리 총정리 (`Ch01` ~ `Ch04`)
+# 📚 Part 1. MySQL 챕터별 핵심 개념 & 실전 쿼리 총정리 (`Ch01` ~ `Ch07`)
 
 ---
 
@@ -323,16 +315,267 @@ GROUP BY restaurant_id         -- ② 가게별로 묶고
 HAVING COUNT(*) >= 50          -- ③ 묶인 결과 중 50건 이상인 가게만 선택!
 ORDER BY delivered_count DESC;
 
--- 4) 실무 피벗 리포트: 월별 주문/완료/취소 건수 및 취소율 한 번에 구하기 (조건부 집계)
-SELECT DATE_FORMAT(ordered_at, '%Y-%m') AS order_month,
-       COUNT(*) AS total_orders,
-       SUM(CASE WHEN status = '배달완료' THEN 1 ELSE 0 END) AS delivered,
-       SUM(CASE WHEN status = '취소' THEN 1 ELSE 0 END) AS canceled,
-       ROUND(SUM(CASE WHEN status = '취소' THEN 1 ELSE 0 END) * 100 / NULLIF(COUNT(*), 0), 1) AS cancel_rate,
-       SUM(CASE WHEN status = '배달완료' THEN delivery_fee ELSE 0 END) AS fee_sum
+-- 4) 소계·총계 리포트: WITH ROLLUP vs 서브쿼리 UNION ALL 비교 (study01.sql)
+-- 방법 A: GROUP BY ... WITH ROLLUP 활용
+SELECT IFNULL(payment_method, '합계') AS payment_method,
+       COUNT(*)                      AS delivery_orders,
+       SUM(orders.delivery_fee)      AS fee_sum
 FROM orders
-GROUP BY order_month
+WHERE status = '배달완료'
+GROUP BY payment_method WITH ROLLUP
+ORDER BY payment_method;
+
+-- 방법 B: 인라인 뷰(서브쿼리) 정렬 후 UNION ALL로 '합계' 행 결합
+SELECT *
+FROM (SELECT payment_method,
+             COUNT(*)                 AS delivery_orders,
+             SUM(orders.delivery_fee) AS fee_sum
+      FROM orders
+      WHERE status = '배달완료'
+      GROUP BY payment_method
+      ORDER BY fee_sum) AS group_orders
+UNION ALL
+SELECT '합계',
+       COUNT(*)          AS delivery_orders,
+       SUM(delivery_fee) AS fee_sum
+FROM orders
+WHERE status = '배달완료';
+```
+
+### 3. 📝 Ch04 실전 연습문제 12제 직접 풀이 ([`study01.sql`](file:///Users/kangminjae/Documents/gov/DB-STUDY/chapters/ch04-aggregation/study01.sql))
+
+운영팀·CS팀·마케팅팀·정산팀의 실무 요청사항 12문제를 직접 쿼리로 작성해 해결한 풀이입니다.
+
+```sql
+-- [문제 1] 운영팀: 전체 메뉴 개수, 최저가, 최고가, 평균가 요약
+SELECT COUNT(menu_id)    AS menu_count,
+       MIN(price)        AS min_price,
+       MAX(price)        AS max_price,
+       FLOOR(AVG(price)) AS avg_price   -- 반올림이 필요할 경우 ROUND(AVG(price)) 사용
+FROM menus;
+
+-- [문제 2] 운영팀: 업종별 가게 수 (많은 순 -> 업종명 가나다순)
+SELECT category,
+       COUNT(restaurant_id) AS restaurant_count
+FROM restaurants
+-- WHERE is_open = TRUE                 -- 영업 중인 가게만 필터링할 경우 추가
+GROUP BY category
+ORDER BY COUNT(restaurant_id) DESC, category;
+
+-- [문제 3] CS팀: 별점별 리뷰 수 및 내용 없이 별점만 남긴(content IS NULL) 리뷰 수
+-- 💡 핵심 포인트: COUNT()는 NULL이 아닌 값만 세므로, IF(content IS NULL, 1, NULL)로 조건부 카운트!
+SELECT rating,
+       COUNT(rating)                       AS review_count,
+       COUNT(IF(content IS NULL, 1, NULL)) AS rating_only
+FROM reviews
+GROUP BY rating
+ORDER BY rating DESC;
+
+-- [문제 4] CS팀: 전체 리뷰 평균 별점(소수 둘째 자리), 리뷰 수, 배달완료(511건) 대비 리뷰 작성률(%)
+SELECT ROUND(AVG(rating), 2)          AS avg_rating,
+       COUNT(*)                       AS review_count,
+       ROUND(COUNT(*) / 511 * 100, 1) AS review_rate
+FROM reviews;
+
+-- [문제 5] 마케팅팀: 회원 등급별 인원, 마케팅 수신 동의 인원, 이메일 등록 인원
+SELECT grade,
+       COUNT(*)                                 AS members,
+       COUNT(IF(marketing_agreed = 1, 1, NULL)) AS marketing_agreed,
+       COUNT(email)                             AS with_email
+FROM customers
+GROUP BY grade
+ORDER BY CASE grade WHEN 'VIP' THEN 1 WHEN '골드' THEN 2 WHEN '실버' THEN 3 ELSE 4 END;
+
+-- [문제 6] 정산팀: 결제 수단별 배달 완료 건수, 평균 할인액, 할인받은 주문 수
+SELECT payment_method,
+       COUNT(IF(status = '배달완료', 1, NULL))     AS delivered_orders,
+       ROUND(AVG(discount_amount), 0)              AS avg_discount,
+       COUNT(IF(discount_amount = 0, NULL, 1))     AS discounted_orders
+FROM orders
+WHERE status = '배달완료'
+GROUP BY payment_method
+ORDER BY delivered_orders DESC;
+
+-- [문제 7] 운영팀: 배달 완료 주문이 가장 많은 피크 시간대 Top 5
+SELECT HOUR(ordered_at) AS order_hour,
+       COUNT(*)         AS delivered_orders
+FROM orders
+WHERE status = '배달완료'
+GROUP BY HOUR(ordered_at)
+ORDER BY delivered_orders DESC
+LIMIT 5;
+
+-- [문제 8] 마케팅팀: 배달 완료 30건 이상 단골 고객의 주문 수, 첫 주문일, 마지막 주문일
+SELECT customer_id,
+       COUNT(*)                                 AS order_count,
+       DATE_FORMAT(MIN(ordered_at), '%Y-%m-%d') AS first_order,
+       DATE_FORMAT(MAX(ordered_at), '%Y-%m-%d') AS last_order
+FROM orders
+WHERE status = '배달완료'
+GROUP BY customer_id
+HAVING COUNT(*) >= 30
+ORDER BY order_count DESC, customer_id ASC
+LIMIT 5;
+
+-- [문제 9] 정산팀: 음식 금액(수량 × 단가 합계)이 가장 큰 주문 Top 5
+SELECT order_id,
+       COUNT(*)                   AS item_lines,
+       SUM(quantity * unit_price) AS food_amount
+FROM order_items
+GROUP BY order_id
+ORDER BY food_amount DESC, order_id
+LIMIT 5;
+
+-- [문제 10] 정산팀: 돼지국밥(menu_id = 1) 단가 인상 전/후 판매 수량 및 매출액 비교
+SELECT unit_price,
+       SUM(quantity)              AS sold_quantity,
+       SUM(quantity * unit_price) AS sales_amount
+FROM order_items
+WHERE menu_id = 1
+GROUP BY unit_price;
+
+-- [문제 11] 운영팀: 라이더별 배달 완료 건수, 평균 배달 시간(분), 60분 초과 지연 건수 및 지연율(%) ★★★
+SELECT rider_id,
+       COUNT(delivered_at) AS deliveries,
+       ROUND(AVG(TIMESTAMPDIFF(MINUTE, ordered_at, delivered_at)), 1) AS avg_minutes,
+       COUNT(CASE WHEN TIMESTAMPDIFF(MINUTE, ordered_at, delivered_at) > 60 THEN 1 END) AS late_count,
+       ROUND(COUNT(CASE WHEN TIMESTAMPDIFF(MINUTE, ordered_at, delivered_at) > 60 THEN 1 END) / COUNT(*) * 100, 1) AS late_rate
+FROM orders
+WHERE status = '배달완료'
+GROUP BY rider_id
+ORDER BY deliveries DESC;
+
+-- [문제 12] 정산팀: 월별 × 결제 수단별 배달 완료 건수 피벗(Pivot) 테이블 ★★★
+SELECT DATE_FORMAT(ordered_at, '%Y-%m') AS order_month,
+       COUNT(CASE WHEN payment_method = '카드' THEN 1 END)     AS card,
+       COUNT(CASE WHEN payment_method = '간편결제' THEN 1 END) AS easy_pay,
+       COUNT(CASE WHEN payment_method = '계좌이체' THEN 1 END) AS transfer,
+       COUNT(CASE WHEN payment_method = '현장결제' THEN 1 END) AS on_site,
+       COUNT(*)                                                AS total
+FROM orders
+WHERE status = '배달완료'
+GROUP BY DATE_FORMAT(ordered_at, '%Y-%m')
 ORDER BY order_month;
+```
+
+---
+
+## 📌 Ch05. `JOIN` — 흩어진 데이터 하나로 잇기 (`ch05-join`)
+
+### 1. 핵심 개념 요약
+* **`INNER JOIN` (`JOIN`)**: 두 테이블에서 `ON A.키 = B.키` 조건이 일치하는(짝이 있는) 행만 연결하여 반환합니다.
+* **`LEFT JOIN` (`LEFT OUTER JOIN`)**: 왼쪽 테이블의 행은 **짝이 없어도 무조건 전부 살리고**, 오른쪽 테이블에 짝이 없으면 `NULL`로 채웁니다.
+  * 💡 **"한 번도 주문하지 않은 고객"**이나 **"리뷰가 안 달린 주문"**을 찾을 때 `LEFT JOIN ... WHERE 오른쪽.PK IS NULL` 패턴을 사용합니다!
+* **`ON` 절 조건 vs `WHERE` 절 조건 (`LEFT JOIN`에서의 결정적 차이)**:
+  * `LEFT JOIN`에서 오른쪽 테이블 조건을 `WHERE`에 쓰면 `NULL`로 살아남은 행들이 다 걸러져서 `INNER JOIN`처럼 변해버립니다. 왼쪽 행을 다 살리면서 조건을 걸려면 반드시 **`ON` 절 안에 `AND`**로 적어야 합니다.
+* **Fan-out(행 뻥튀기) 주의**: `1:N` 관계인 테이블(`orders` ↔ `order_items`)을 조인하면 주문 1건이 메뉴 줄 수만큼 여러 행으로 불어나므로, 조인 후 `SUM(orders.delivery_fee)`를 하면 배달팁이 중복 합산됩니다.
+
+### 2. 💻 핵심 예제 코드 (`lecture.sql`)
+```sql
+-- 1) 3개 테이블 INNER JOIN: 가게별 배달완료 음식 매출 순위 (restaurants + orders + order_items)
+SELECT r.restaurant_id,
+       r.name,
+       r.category,
+       COUNT(DISTINCT o.order_id)       AS delivered_orders, -- Fan-out 방지를 위해 DISTINCT order_id!
+       SUM(oi.quantity * oi.unit_price) AS food_sales
+FROM restaurants r
+JOIN orders o       ON r.restaurant_id = o.restaurant_id
+JOIN order_items oi ON o.order_id = oi.order_id
+WHERE o.status = '배달완료'
+GROUP BY r.restaurant_id, r.name, r.category
+ORDER BY food_sales DESC;
+
+-- 2) LEFT JOIN + IS NULL: 가입 후 한 번도 주문하지 않은 고객 찾기 (마케팅 쿠폰 발송 대상)
+SELECT c.customer_id,
+       c.name,
+       c.grade,
+       c.joined_at
+FROM customers c
+LEFT JOIN orders o ON c.customer_id = o.customer_id
+WHERE o.order_id IS NULL
+ORDER BY c.customer_id;
+```
+
+---
+
+## 📌 Ch06. 서브쿼리·집합·윈도우 함수 (`ch06-subquery-window`)
+
+### 1. 핵심 개념 요약
+* **서브쿼리의 3가지 반환 모양**:
+  1. **스칼라 서브쿼리 (1행 1열)**: `WHERE price > (SELECT AVG(price) FROM menus)`처럼 단일 값 비교에 사용.
+  2. **목록 서브쿼리 (N행 1열)**: `WHERE restaurant_id IN (SELECT ...)` 또는 `EXISTS`로 존재 여부 확인. (단, `NOT IN`은 서브쿼리 결과에 `NULL`이 하나라도 섞이면 전체 결과가 0건이 되는 함정이 있으므로 `NOT EXISTS` 권장!)
+  3. **인라인 뷰 (N행 M열 표)**: `FROM (SELECT ...) AS t` 또는 **`WITH 이름 AS (SELECT ...)` (CTE)**로 복잡한 쿼리를 단계별로 쪼개어 가독성을 높임.
+* **윈도우 함수 (`OVER (PARTITION BY ... ORDER BY ...)`)**:
+  * `GROUP BY`처럼 행을 하나로 뭉개지 않고, **원래 행들을 그대로 유지하면서** 그룹별 순위(`ROW_NUMBER`, `RANK`, `DENSE_RANK`)나 누적 합계(`SUM(...) OVER (...)`)를 옆 열에 붙여줍니다.
+
+### 2. 💻 핵심 예제 코드 (`lecture.sql`)
+```sql
+-- 1) CTE(WITH절) + 윈도우 함수(RANK): 가게마다 가장 많이 팔린 효자 메뉴 1등 뽑기
+WITH menu_sales AS (
+    SELECT r.restaurant_id,
+           r.name        AS restaurant_name,
+           m.name        AS menu_name,
+           SUM(oi.quantity) AS sold_qty,
+           RANK() OVER (
+               PARTITION BY r.restaurant_id
+               ORDER BY SUM(oi.quantity) DESC
+           ) AS rnk
+    FROM restaurants r
+    JOIN menus m        ON r.restaurant_id = m.restaurant_id
+    JOIN order_items oi ON m.menu_id = oi.menu_id
+    JOIN orders o       ON oi.order_id = o.order_id
+    WHERE o.status = '배달완료'
+    GROUP BY r.restaurant_id, r.name, m.menu_id, m.name
+)
+SELECT restaurant_name, menu_name, sold_qty
+FROM menu_sales
+WHERE rnk = 1
+ORDER BY sold_qty DESC;
+```
+
+---
+
+## 📌 Ch07. 테이블 설계와 제약조건 — DDL (`ch07-ddl-constraints`)
+
+### 1. 핵심 개념 요약
+* **데이터 타입 선택 원칙**:
+  * **돈·비율에는 절대 `FLOAT`/`DOUBLE`을 쓰지 않는다** (2진수 부동소수점 오차 발생 → 원 단위 `INT` 또는 정확한 소수 `DECIMAL(p, s)` 사용).
+  * 길이가 고정된 문자열(전화번호 13자리 등)은 `CHAR(n)`, 가변 길이 문자열은 `VARCHAR(n)` 사용.
+* **6대 무결성 제약조건 (비즈니스 규칙을 DB가 강제하도록 번역)**:
+  1. `PRIMARY KEY (PK)`: 행 식별자 (`NOT NULL` + `UNIQUE`, 주로 `AUTO_INCREMENT`와 함께 사용)
+  2. `NOT NULL`: 필수 입력 값 (위반 시 `Error 1048`)
+  3. `UNIQUE`: 중복 불가 (예: 쿠폰 코드, 한 주문당 리뷰 1개 — 위반 시 `Error 1062`)
+  4. `DEFAULT`: 값 생략 시 들어갈 기본값
+  5. `CHECK`: 값의 범위·조건 제한 (예: `CHECK (rating BETWEEN 1 AND 5)` — 위반 시 `Error 3819`)
+  6. `FOREIGN KEY (FK)`: 부모 테이블에 존재하는 값만 참조 가능 (위반 시 `Error 1452` / `1451`)
+
+### 2. 💻 핵심 예제 코드 (`lecture.sql`)
+```sql
+-- 쿠폰 마스터 테이블(coupons) & 고객 보유 쿠폰 테이블(customer_coupons) DDL 설계
+CREATE TABLE coupons (
+    coupon_id         INT          NOT NULL AUTO_INCREMENT,
+    code              VARCHAR(30)  NOT NULL,
+    title             VARCHAR(100) NOT NULL,
+    discount_amount   INT          NOT NULL,
+    min_order_amount  INT          NOT NULL DEFAULT 0,
+    expires_at        DATE         NOT NULL,
+    PRIMARY KEY (coupon_id),
+    CONSTRAINT uq_coupons_code     UNIQUE (code),                  -- 쿠폰 코드 중복 방지
+    CONSTRAINT ck_coupons_discount CHECK (discount_amount > 0),    -- 할인액 양수 강제
+    CONSTRAINT ck_coupons_min_ord  CHECK (min_order_amount >= 0)   -- 최소주문금액 0 이상
+);
+
+CREATE TABLE customer_coupons (
+    customer_coupon_id INT      NOT NULL AUTO_INCREMENT,
+    customer_id        INT      NOT NULL,
+    coupon_id          INT      NOT NULL,
+    issued_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    used_at            DATETIME NULL,
+    PRIMARY KEY (customer_coupon_id),
+    CONSTRAINT uq_cust_coupon UNIQUE (customer_id, coupon_id),     -- 동일 고객에게 같은 쿠폰 중복 지급 방지
+    CONSTRAINT fk_cc_customer FOREIGN KEY (customer_id) REFERENCES customers (customer_id),
+    CONSTRAINT fk_cc_coupon   FOREIGN KEY (coupon_id)   REFERENCES coupons (coupon_id)
+);
 ```
 
 ---
