@@ -1,7 +1,7 @@
 # Ch04. 집계와 그룹 — 563건을 한 장의 리포트로
 
 > **PART 1 · 읽기** | 3시간 | 난이도 ★★
-> 이전: [Ch03. 함수로 데이터 가공하기](../ch03-functions/README.md) | 다음: Ch05. JOIN — 흩어진 데이터 잇기
+> 이전: [Ch03. 함수로 데이터 가공하기](../ch03-functions/README.md) | 다음: [Ch05. JOIN — 흩어진 데이터 잇기](../ch05-join/README.md)
 
 ## 수업 준비
 
