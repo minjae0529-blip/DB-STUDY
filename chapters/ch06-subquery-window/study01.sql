@@ -238,10 +238,6 @@ select
     group by rs.category, rs.name, rs.restaurant_id
     order by food_sales desc ;
 
-
-
-
-
 #문제 12
 select
     date_format(od.ordered_at, '%Y-%m') as order_month,
@@ -253,3 +249,4 @@ from orders od
     and rt.name in ('대연동크런치치킨', '서면야식치킨')
 
 group by date_format(od.ordered_at, '%Y-%m'), rt.name
+
