@@ -185,4 +185,71 @@ from orders o
 where status = '배달완료'
 group by o.order_id, delivery_fee
 order by food_amount desc, order_id asc
-limit 6;
+limit 5;
+
+
+
+#문제 8
+select * from orders;
+
+select
+    cs.name,
+    max(o.ordered_at) as last_order_date,
+    timestampdiff(day, max(o.ordered_at), '2026-07-01') as day_since_last
+from orders o
+         join customers cs on cs.customer_id = o.customer_id
+where o.ordered_at < '2026-07-01'
+group by cs.customer_id, cs.name
+having day_since_last > 29
+order by day_since_last desc;
+
+#문제 10
+
+select * from restaurants;
+
+select
+    cs.name,
+    min(os.ordered_at) as first_ordered_at,
+    rs.name
+from
+    orders os
+        inner join restaurants rs on rs.restaurant_id = os.restaurant_id
+        inner join customers cs on cs.customer_id = os.customer_id
+where os.ordered_at = (
+    select min(o2.ordered_at)
+    from orders o2
+    where o2.customer_id = os.customer_id
+)
+group by rs.name, cs.name, cs.customer_id
+order by cs.customer_id;
+
+
+#문제 11
+select
+        rs.category,
+        row_number() over (partition by rs.category order by os.restaurant_id desc)  as cate_gory,
+        rs.name,
+        sum(oi.quantity * oi.unit_price) as food_sales
+    from
+        orders os
+        inner join restaurants rs on rs.restaurant_id = os.restaurant_id
+        inner join order_items oi on oi.order_id = os.order_id
+    where status = '배달완료'
+    group by rs.category, rs.name, rs.restaurant_id
+    order by food_sales desc ;
+
+
+
+
+
+#문제 12
+select
+    date_format(od.ordered_at, '%Y-%m') as order_month,
+    rt.name as restaurant_name,
+    sum(oi.unit_price * oi.quantity) as food_sales
+from orders od
+         inner join order_items oi on oi.order_id = od.order_id
+         join restaurants rt on rt.restaurant_id = od.restaurant_id
+    and rt.name in ('대연동크런치치킨', '서면야식치킨')
+
+group by date_format(od.ordered_at, '%Y-%m'), rt.name

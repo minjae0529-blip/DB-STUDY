@@ -303,14 +303,72 @@ ORDER BY SUM(oi.quantity) DESC;
 - **위치에 따른 서브쿼리 형태**:
   - **인라인 뷰 (`FROM` 절)**: 여러 행과 열을 가진 표 형태의 결과를 가상 테이블처럼 사용 (`FROM (SELECT ...) m`)
   - **목록 서브쿼리 (`WHERE` 절)**: 1개 컬럼의 여러 행을 반환해 `IN`, `NOT IN`, `EXISTS`와 함께 사용
-  - **스칼라 서브쿼리 (`SELECT` / `WHERE` 절)**: 단일 값(1행 1열)을 반환해 컬럼 값이나 비교 조건으로 사용
+  - **스칼라 서브쿼리 (`SELECT` / `WHERE` 절)**: 단일 값(1행 1열)을 반환해 컬럼 값이나 비교 조건으로 사용 (2행 이상 반환 시 `Error 1242` 발생)
 - **`NOT IN` 사용 시 `NULL` 주의점**:
   - 서브쿼리 결과에 `NULL`이 하나라도 포함되어 있으면 `NOT IN` 조건 전체가 `UNKNOWN`이 되어 결과가 0건으로 나온다.
   - 따라서 서브쿼리 안에 `IS NOT NULL` 조건을 명시하거나, **`NOT EXISTS (SELECT 1 ...)`**를 사용하는 것이 안전하다.
-- **CTE (`WITH` 절) & `UNION ALL`**:
-  - 복잡한 집계 쿼리나 임시 코드성 테이블(요일 매핑 등)을 `WITH` 절로 분리해두면 본 쿼리에서 깔끔하게 `JOIN`해 재사용할 수 있다.
-- **윈도우 함수 (`OVER`)**:
-  - `GROUP BY`와 달리 행을 합치지 않고, 파티션(`PARTITION BY`) 내부에서의 순위(`RANK()`)나 순서(`ORDER BY`)에 따른 누적합(`SUM() OVER(...)`)을 계산한다.
+- **CTE (`WITH` 절) & `UNION` / `UNION ALL`**:
+  - `WITH 테이블명 AS (SELECT ...)`: 복잡한 집계 쿼리나 임시 코드성 테이블(요일 매핑 등)을 단계별로 이름 붙여 정의하고 본 쿼리에서 재사용할 수 있다.
+  - `UNION`은 중복 행을 제거(느림), `UNION ALL`은 중복 제거 없이 위아래 결과를 그대로 합친다(빠름).
+- **윈도우 함수 (`함수() OVER (PARTITION BY 그룹 ORDER BY 순서)`)**:
+  - `GROUP BY`는 그룹마다 1행으로 합치지만, 윈도우 함수는 **원래 행들을 그대로 유지한 채** 옆에 그룹별 순위나 누적 합계를 붙인다.
+  - **순위 함수 3가지 (`ROW_NUMBER`, `RANK`, `DENSE_RANK`) 동점 처리 비교**:
+
+| 함수 | 동점 처리 방식 | 예시 결과 (`22000, 22000, 21000, 21000, 20000`) |
+| :--- | :--- | :--- |
+| `ROW_NUMBER()` | 동점이어도 무조건 고유 번호 부여 | `1, 2, 3, 4, 5` |
+| `RANK()` | 동점은 같은 순위, 다음 순위는 동점 수만큼 건너뜀 | `1, 1, 3, 3, 5` |
+| `DENSE_RANK()` | 동점은 같은 순위, 다음 순위를 건너뛰지 않음 | `1, 1, 2, 2, 3` |
+
+  - **그룹별 Top-N 필터링**: 윈도우 함수는 `SELECT` 단계에서 계산되므로 `WHERE` 절에서 바로 조건으로 쓸 수 없다. `WITH`(CTE)나 인라인 뷰로 먼저 감싼 뒤 바깥 쿼리에서 `WHERE rn = 1` 형태로 거른다.
+  - **집계 함수 + `OVER`**:
+    - `SUM(SUM(금액)) OVER (ORDER BY 월)`: 안쪽 `SUM`은 `GROUP BY` 월별 합계이고, 바깥 `SUM() OVER`는 그 월별 합계를 순서대로 누적한다.
+    - `SUM(SUM(금액)) OVER ()`: `OVER ()` 괄호를 비우면 전체 합계가 되어 전체 대비 비율(`%`)을 구할 때 사용한다.
+
+### 윈도우 함수 핵심 예제 (`chapters/ch06-subquery-window/lecture.sql`)
+```sql
+-- 1. 순위 함수 3종 비교 (ROW_NUMBER vs RANK vs DENSE_RANK)
+SELECT name,
+       price,
+       ROW_NUMBER() OVER (ORDER BY price DESC) AS row_num,
+       RANK()       OVER (ORDER BY price DESC) AS rnk,
+       DENSE_RANK() OVER (ORDER BY price DESC) AS dense_rnk
+FROM menus
+WHERE restaurant_id IN (1, 6)
+ORDER BY price DESC, name;
+
+-- 2. PARTITION BY: 가게별로 1위부터 다시 순위 매기기
+SELECT restaurant_id,
+       name,
+       price,
+       RANK() OVER (PARTITION BY restaurant_id ORDER BY price DESC) AS price_rank
+FROM menus
+WHERE restaurant_id IN (1, 2)
+ORDER BY restaurant_id, price_rank;
+
+-- 3. 그룹별 Top-N: CTE로 감싼 뒤 가게마다 가장 비싼 메뉴 1개씩 뽑기 (ROW_NUMBER)
+WITH ranked AS (
+    SELECT restaurant_id,
+           name,
+           price,
+           ROW_NUMBER() OVER (PARTITION BY restaurant_id ORDER BY price DESC, menu_id) AS rn
+    FROM menus
+)
+SELECT restaurant_id, name, price
+FROM ranked
+WHERE rn = 1
+ORDER BY restaurant_id;
+
+-- 4. 집계 함수 + OVER: 월별 배달비 합계, 누적 합계(ORDER BY), 전체 대비 비중(OVER ())
+SELECT DATE_FORMAT(ordered_at, '%Y-%m') AS order_month,
+       SUM(delivery_fee) AS fee_sum,
+       SUM(SUM(delivery_fee)) OVER (ORDER BY DATE_FORMAT(ordered_at, '%Y-%m')) AS cumulative_fee,
+       ROUND(SUM(delivery_fee) * 100 / SUM(SUM(delivery_fee)) OVER (), 1) AS share_pct
+FROM orders
+WHERE status = '배달완료'
+GROUP BY order_month
+ORDER BY order_month;
+```
 
 ### 실습 및 연습문제 풀이 (`chapters/ch06-subquery-window/study01.sql`)
 ```sql
@@ -383,8 +441,8 @@ SELECT order_id,
 FROM orders od
     LEFT OUTER JOIN day_of_week_kor dowk ON dowk.day_id = DAYOFWEEK(od.ordered_at);
 
--- 4. 윈도우 함수 (RANK, 누적합 SUM OVER)
--- (1) 카테고리별 매출 기준 가게 순위 매기기 (PARTITION BY category)
+-- 4. 윈도우 함수 실습 (RANK, ROW_NUMBER, 누적합 SUM OVER)
+-- (1) 카테고리별 매출 기준 가게 순위 매기기 (RANK() OVER)
 SELECT rs.category,
        RANK() OVER (PARTITION BY category ORDER BY SUM(quantity * price) DESC) AS restaurant_rank,
        rs.restaurant_id,
@@ -403,7 +461,7 @@ SELECT DATE_FORMAT(ordered_at, '%Y-%m') AS order_month,
 FROM orders
 GROUP BY DATE_FORMAT(ordered_at, '%Y-%m');
 
--- 5. 연습문제 풀이 (문제 1, 5, 7)
+-- 5. 연습문제 풀이 (study01.sql)
 -- [문제 1] 전체 메뉴 중 최고가 메뉴 조회
 SELECT restaurant_id, name, price
 FROM menus
@@ -421,6 +479,29 @@ WHERE DATE(cs.joined_at) < '2026-06-01'
         AND o1.ordered_at < '2026-07-01'
   )
 ORDER BY cs.joined_at;
+
+-- [문제 8] 마지막 주문 이후 30일 이상 경과한 고객 조회
+SELECT cs.name,
+       MAX(o.ordered_at) AS last_order_date,
+       TIMESTAMPDIFF(DAY, MAX(o.ordered_at), '2026-07-01') AS day_since_last
+FROM orders o
+    JOIN customers cs ON cs.customer_id = o.customer_id
+WHERE o.ordered_at < '2026-07-01'
+GROUP BY cs.customer_id, cs.name
+HAVING day_since_last > 29
+ORDER BY day_since_last DESC;
+
+-- [문제 11] 업종별 가게 음식 매출 및 ROW_NUMBER() 순번 부여
+SELECT rs.category,
+       ROW_NUMBER() OVER (PARTITION BY rs.category ORDER BY SUM(oi.quantity * oi.unit_price) DESC) AS category_rn,
+       rs.name,
+       SUM(oi.quantity * oi.unit_price) AS food_sales
+FROM orders os
+    INNER JOIN restaurants rs ON rs.restaurant_id = os.restaurant_id
+    INNER JOIN order_items oi ON oi.order_id = os.order_id
+WHERE status = '배달완료'
+GROUP BY rs.category, rs.name, rs.restaurant_id
+ORDER BY food_sales DESC;
 ```
 
 ---
