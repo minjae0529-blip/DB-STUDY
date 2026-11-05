@@ -509,11 +509,134 @@ ORDER BY food_sales DESC;
 ## Ch07. 테이블 설계와 제약조건 (`ch07-ddl-constraints`)
 
 ### 정리
-- **데이터 타입**:
-  - 금액이나 할인율처럼 정확도가 중요한 숫자에는 부동소수점 오차가 있는 `FLOAT`/`DOUBLE` 대신 `INT`나 `DECIMAL`을 사용한다.
-  - 고정 길이 문자열(전화번호 등)은 `CHAR`, 가변 길이 문자열은 `VARCHAR`를 사용한다.
-- **주요 제약조건**:
-  - `PRIMARY KEY`, `FOREIGN KEY`, `NOT NULL`, `UNIQUE`, `DEFAULT`, `CHECK`
+- **데이터 타입 선택**:
+  - 금액이나 할인율처럼 정확도가 중요한 숫자에는 2진수 부동소수점 오차가 발생하는 `FLOAT`/`DOUBLE`을 쓰지 않고 `INT`(원 단위)나 `DECIMAL(p, s)`을 사용한다.
+  - 전화번호처럼 길이가 일정하고 사칙연산을 하지 않는 값(맨 앞 `0` 유지 필요)은 `CHAR(n)`, 가변 길이 문자열은 `VARCHAR(n)`(글자 수 기준), 긴 본문은 `TEXT`를 사용한다.
+- **제약조건 6종과 주요 에러 코드**:
+  - `PRIMARY KEY`: 행 식별자 (`NOT NULL` + `UNIQUE`, 보통 `AUTO_INCREMENT`와 함께 사용)
+  - `NOT NULL`: 빈 값 허용 안 함 (위반 시 `Error 1048`)
+  - `UNIQUE`: 중복 값 허용 안 함 (`NULL`은 여러 개 가능, 두 컬럼 이상을 묶어 복합 `UNIQUE` 지정 가능 — 위반 시 `Error 1062`)
+  - `DEFAULT`: 값 생략 시 자동으로 채워질 기본값 (`DEFAULT 0`, `DEFAULT CURRENT_TIMESTAMP` 등)
+  - `CHECK`: 허용할 값의 범위나 여러 컬럼 간 조건식 지정 (위반 시 `Error 3819`)
+  - `FOREIGN KEY`: 부모 테이블에 존재하는 값만 참조 가능 (없는 부모 참조 시 `Error 1452`, 자식이 참조 중인 부모 삭제 시 `Error 1451`)
+    - `ON DELETE` 정책: `RESTRICT`(기본값, 삭제 차단), `CASCADE`(자식 행도 연쇄 삭제), `SET NULL`(자식의 FK 값을 `NULL`로 변경)
+- **제약조건 작성 위치**:
+  - 단일 컬럼에만 간단히 걸 때는 컬럼 옆에 적을 수 있지만, 복합 `UNIQUE`를 걸거나 에러 메시지에서 어떤 규칙을 어겼는지 바로 확인하려면 아래쪽에 `CONSTRAINT 제약조건이름 ...` 형태로 이름을 붙여 작성한다.
+- **`DELETE` vs `TRUNCATE` vs `DROP`**:
+
+| 구문 | 분류 | 동작 | 되돌리기(Rollback) | `AUTO_INCREMENT` |
+| :--- | :--- | :--- | :--- | :--- |
+| `DELETE FROM t WHERE ...` | DML | 조건에 맞는 행 삭제 | 트랜잭션 내 가능 | 기존 번호 유지 |
+| `TRUNCATE TABLE t` | DDL | 테이블 구조는 남기고 모든 행 초기화 | 불가 | 1로 초기화 |
+| `DROP TABLE t` | DDL | 테이블 자체를 삭제 | 불가 | - |
+
+### 실습 및 연습문제 풀이 (`chapters/ch07-ddl-constraints/study01.sql`)
+```sql
+-- 1. 쿠폰 종류 테이블(coupons) 설계: 복합 CHECK 조건(정액/정률 구분) 적용
+CREATE TABLE coupons (
+    coupon_id        INT         NOT NULL AUTO_INCREMENT,
+    code             VARCHAR(20) NOT NULL,
+    name             VARCHAR(50) NOT NULL,
+    discount_type    VARCHAR(10) NOT NULL,
+    discount_value   INT         NOT NULL,
+    min_order_amount INT         NOT NULL DEFAULT 0,
+    vaild_days       INT         NOT NULL DEFAULT 30,
+    is_active        BOOLEAN     NOT NULL DEFAULT TRUE,
+    create_at        DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT pk_coupons PRIMARY KEY (coupon_id),
+    CONSTRAINT uq_coupons UNIQUE (code),
+    CONSTRAINT ck_coupons_type CHECK (discount_type IN ('정액', '정률')),
+    CONSTRAINT ck_coupons_value CHECK (
+        (discount_type = '정액' AND discount_value > 0)
+        OR
+        (discount_type = '정률' AND discount_value BETWEEN 1 AND 50)
+    ),
+    CONSTRAINT ck_coupons_min CHECK (min_order_amount >= 0),
+    CONSTRAINT ck_coupons_day CHECK (vaild_days > 0)
+);
+
+-- 2. 고객 보유 쿠폰 테이블(customer_coupons): M:N 연결 테이블 + 복합 UNIQUE(중복 지급 방지)
+CREATE TABLE customer_coupons (
+    customer_coupon_id INT      NOT NULL AUTO_INCREMENT,
+    customer_id        INT      NOT NULL,
+    coupon_id          INT      NOT NULL,
+    issued_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at         DATETIME NOT NULL,
+    used_order_id      INT      NULL,
+
+    CONSTRAINT pk_customer_coupons PRIMARY KEY (customer_coupon_id),
+    CONSTRAINT fk_cc_customer FOREIGN KEY (customer_id) REFERENCES customers (customer_id),
+    CONSTRAINT fk_cc_coupon   FOREIGN KEY (coupon_id)   REFERENCES coupons (coupon_id),
+    CONSTRAINT fk_cc_order    FOREIGN KEY (used_order_id) REFERENCES orders (order_id),
+    CONSTRAINT uq_cc_customer_coupon UNIQUE (customer_id, coupon_id),
+    CONSTRAINT uq_cc_used_order      UNIQUE (used_order_id),
+    CONSTRAINT ck_cc_period          CHECK (expires_at > issued_at)
+);
+
+-- 3. information_schema를 이용해 현재 DB의 NULL 허용 컬럼 및 CHECK 제약조건 조회
+SELECT COLUMN_NAME, DATA_TYPE
+FROM information_schema.COLUMNS
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME = 'orders'
+  AND IS_NULLABLE = 'yes'
+GROUP BY COLUMN_NAME, DATA_TYPE;
+
+SELECT CONSTRAINT_NAME
+FROM information_schema.TABLE_CONSTRAINTS
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME = 'orders'
+  AND CONSTRAINT_TYPE = 'CHECK';
+
+-- 4. [문제 4] 공지사항 테이블(notices) 생성 및 데이터 등록
+CREATE TABLE notices (
+    notice_id INT          NOT NULL AUTO_INCREMENT,
+    title     VARCHAR(100) NOT NULL,
+    content   TEXT         NOT NULL,
+    is_pinned BOOLEAN      NOT NULL DEFAULT FALSE,
+    published DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT pk_notice_id PRIMARY KEY (notice_id)
+);
+
+-- 5. [문제 5] 가게 휴무일 테이블(restaurant_holidays): 같은 가게에 같은 날짜 중복 등록 방지
+DROP TABLE IF EXISTS restaurant_holidays;
+CREATE TABLE restaurant_holidays (
+    holiday_id    INT PRIMARY KEY AUTO_INCREMENT,
+    restaurant_id INT         NOT NULL,
+    hoilday_date  DATETIME    NOT NULL,
+    reason        VARCHAR(50) NULL,
+
+    CONSTRAINT fk_restaurant_id FOREIGN KEY (restaurant_id) REFERENCES restaurants (restaurant_id),
+    CONSTRAINT uq_holidays_date UNIQUE (hoilday_date, restaurant_id)
+);
+
+-- 6. [문제 6] 메뉴 옵션 테이블(menu_options): ON DELETE CASCADE 및 옵션 포함 가격 조회
+DROP TABLE IF EXISTS menu_options;
+CREATE TABLE menu_options (
+    option_id         INT AUTO_INCREMENT,
+    menu_id           INT         NOT NULL,
+    option_name       VARCHAR(30) NOT NULL,
+    price_with_option INT DEFAULT 0,
+
+    CONSTRAINT pk_option_id     PRIMARY KEY (option_id),
+    CONSTRAINT price_with_option CHECK (price_with_option >= 0),
+    CONSTRAINT fk_option_name   FOREIGN KEY (menu_id) REFERENCES menus (menu_id) ON DELETE CASCADE,
+    CONSTRAINT uq_option_name   UNIQUE (option_name, menu_id)
+);
+
+INSERT INTO menu_options (menu_id, option_name, price_with_option) VALUES
+    (35, '곱배기', 1000),
+    (35, '계란 프라이', 1500),
+    (35, '면추가 없음', 0);
+
+SELECT m.name AS menu_name,
+       option_name,
+       (mo.price_with_option + m.price) AS price_with_option
+FROM menu_options mo
+    INNER JOIN menus m ON m.menu_id = mo.menu_id
+ORDER BY price_with_option;
+```
 
 ---
 
