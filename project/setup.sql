@@ -1,6 +1,6 @@
 -- =============================================================================
 --  종합 프로젝트 — 단골 리워드 — 수업 준비 스크립트
---  생성 DB : hanip_delivery11
+--  생성 DB : hanip_delivery13
 --
 --  이 과정은 챕터마다 새 DB를 만듭니다 (Ch01 = hanip_delivery01, Ch02 = hanip_delivery02 …).
 --  지난 챕터의 DB와 실습 기록은 그대로 남습니다 → SHOW DATABASES LIKE 'hanip_delivery%';
@@ -9,17 +9,17 @@
 --             명령줄: mysql -u root -p < setup.sql
 --  정상 완료 : 맨 아래 결과에 customers 30 … orders 563 … reviews 260
 --
---  ⚠ hanip_delivery11 가 이미 있으면 CREATE DATABASE 에서 1007 에러로 멈춥니다. (실습 기록 보호)
+--  ⚠ hanip_delivery13 가 이미 있으면 CREATE DATABASE 에서 1007 에러로 멈춥니다. (실습 기록 보호)
 --    이 챕터 DB를 처음 상태로 되돌리려면 아래 DROP 줄 맨 앞의 '-- ' 를 지우고 다시 실행하세요.
 -- =============================================================================
 SET NAMES utf8mb4;
 
--- DROP DATABASE IF EXISTS hanip_delivery11;
-CREATE DATABASE hanip_delivery11
+-- DROP DATABASE IF EXISTS hanip_delivery13;
+CREATE DATABASE hanip_delivery13
     DEFAULT CHARACTER SET utf8mb4
     DEFAULT COLLATE utf8mb4_0900_ai_ci;
 
-USE hanip_delivery11;
+USE hanip_delivery13;
 
 
 -- -----------------------------------------------------------------------------
