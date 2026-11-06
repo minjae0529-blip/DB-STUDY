@@ -531,8 +531,9 @@ ORDER BY food_sales DESC;
 | `DROP TABLE t` | DDL | 테이블 자체를 삭제 | 불가 | - |
 
 ### 실습 및 연습문제 풀이 (`chapters/ch07-ddl-constraints/study01.sql`)
+
+#### 1. 쿠폰 종류(`coupons`) & 고객 보유 쿠폰(`customer_coupons`) 테이블 설계 및 조회
 ```sql
--- 1. 쿠폰 종류 테이블(coupons) 설계: 복합 CHECK 조건(정액/정률 구분) 적용
 CREATE TABLE coupons (
     coupon_id        INT         NOT NULL AUTO_INCREMENT,
     code             VARCHAR(20) NOT NULL,
@@ -556,7 +557,6 @@ CREATE TABLE coupons (
     CONSTRAINT ck_coupons_day CHECK (vaild_days > 0)
 );
 
--- 2. 고객 보유 쿠폰 테이블(customer_coupons): M:N 연결 테이블 + 복합 UNIQUE(중복 지급 방지)
 CREATE TABLE customer_coupons (
     customer_coupon_id INT      NOT NULL AUTO_INCREMENT,
     customer_id        INT      NOT NULL,
@@ -574,21 +574,76 @@ CREATE TABLE customer_coupons (
     CONSTRAINT ck_cc_period          CHECK (expires_at > issued_at)
 );
 
--- 3. information_schema를 이용해 현재 DB의 NULL 허용 컬럼 및 CHECK 제약조건 조회
-SELECT COLUMN_NAME, DATA_TYPE
+INSERT INTO coupons (code, name, discount_type, discount_value, min_order_amount, vaild_days) VALUES
+    ('WELCOME3000', '첫 주문 3,000원 할인', '정액', 3000, 15000, 30),
+    ('WEEKEND15',   '주말 15% 할인',         '정률', 15,   20000, 7),
+    ('VIP5000',     'VIP 5,000원 할인',      '정액', 5000, 25000, 60);
+
+INSERT INTO customer_coupons (customer_id, coupon_id, issued_at, expires_at) VALUES
+    (30, 1, '2026-06-28 16:30:00', '2026-07-28 16:30:00'),
+    (1,  3, '2026-06-30 09:00:00', '2026-08-29 09:00:00'),
+    (2,  3, '2026-06-30 09:00:00', '2026-08-29 09:00:00');
+
+SELECT c.name AS customer_name,
+       cp.name AS coupon_name,
+       cc.issued_at,
+       cc.expires_at,
+       cc.used_order_id
+FROM customer_coupons cc
+    JOIN customers c ON cc.customer_id = c.customer_id
+    JOIN coupons cp  ON cc.coupon_id   = cp.coupon_id
+ORDER BY cc.customer_coupon_id;
+```
+**조회 결과**
+
+| customer_name | coupon_name | issued_at | expires_at | used_order_id |
+| :--- | :--- | :--- | :--- | :--- |
+| 윤서아 | 첫 주문 3,000원 할인 | 2026-06-28 16:30:00 | 2026-07-28 16:30:00 | NULL |
+| 김민준 | VIP 5,000원 할인 | 2026-06-30 09:00:00 | 2026-08-29 09:00:00 | NULL |
+| 이서연 | VIP 5,000원 할인 | 2026-06-30 09:00:00 | 2026-08-29 09:00:00 | NULL |
+
+---
+
+#### 2. [문제 1 & 문제 2] `information_schema`로 `NULL` 허용 컬럼 및 `CHECK` 제약조건 조회
+```sql
+-- [문제 1] orders 테이블에서 NULL을 허용하는 컬럼과 데이터 타입 조회
+SELECT COLUMN_NAME,
+       DATA_TYPE
 FROM information_schema.COLUMNS
 WHERE TABLE_SCHEMA = DATABASE()
   AND TABLE_NAME = 'orders'
   AND IS_NULLABLE = 'yes'
 GROUP BY COLUMN_NAME, DATA_TYPE;
+```
+**조회 결과**
 
+| COLUMN_NAME | DATA_TYPE |
+| :--- | :--- |
+| rider_id | int |
+| request_note | varchar |
+| delivered_at | datetime |
+
+```sql
+-- [문제 2] orders 테이블에 걸린 CHECK 제약조건 이름 조회
 SELECT CONSTRAINT_NAME
 FROM information_schema.TABLE_CONSTRAINTS
 WHERE TABLE_SCHEMA = DATABASE()
   AND TABLE_NAME = 'orders'
   AND CONSTRAINT_TYPE = 'CHECK';
+```
+**조회 결과**
 
--- 4. [문제 4] 공지사항 테이블(notices) 생성 및 데이터 등록
+| CONSTRAINT_NAME |
+| :--- |
+| ck_orders_discount |
+| ck_orders_fee |
+| ck_orders_payment |
+| ck_orders_status |
+
+---
+
+#### 3. [문제 4] 공지사항 테이블(`notices`) 생성, 등록 및 조회
+```sql
 CREATE TABLE notices (
     notice_id INT          NOT NULL AUTO_INCREMENT,
     title     VARCHAR(100) NOT NULL,
@@ -599,7 +654,28 @@ CREATE TABLE notices (
     CONSTRAINT pk_notice_id PRIMARY KEY (notice_id)
 );
 
--- 5. [문제 5] 가게 휴무일 테이블(restaurant_holidays): 같은 가게에 같은 날짜 중복 등록 방지
+INSERT INTO notices (notice_id, title, content, is_pinned, published)
+VALUES (1, '7월 정산일 안내', '7월 정산은 10일에 진행됩니다', TRUE, CURRENT_TIME);
+
+INSERT INTO notices (notice_id, title, content, is_pinned, published)
+VALUES (2, '배달팁 정책변경 안내', '8월부터 5만원 이상 무료배달 기준이 4만원으로 변경', FALSE, CURRENT_TIME);
+
+SELECT notice_id,
+       title,
+       is_pinned
+FROM notices;
+```
+**조회 결과**
+
+| notice_id | title | is_pinned |
+| :--- | :--- | :--- |
+| 1 | 7월 정산일 안내 | 1 |
+| 2 | 배달팁 정책변경 안내 | 0 |
+
+---
+
+#### 4. [문제 5] 가게 휴무일 테이블(`restaurant_holidays`) 생성, 등록 및 `JOIN` 조회
+```sql
 DROP TABLE IF EXISTS restaurant_holidays;
 CREATE TABLE restaurant_holidays (
     holiday_id    INT PRIMARY KEY AUTO_INCREMENT,
@@ -611,7 +687,34 @@ CREATE TABLE restaurant_holidays (
     CONSTRAINT uq_holidays_date UNIQUE (hoilday_date, restaurant_id)
 );
 
--- 6. [문제 6] 메뉴 옵션 테이블(menu_options): ON DELETE CASCADE 및 옵션 포함 가격 조회
+INSERT INTO restaurant_holidays (restaurant_id, hoilday_date, reason)
+VALUES (1, '2025-07-15', '내부수리');
+
+INSERT INTO restaurant_holidays (restaurant_id, hoilday_date, reason)
+VALUES (6, '2025-07-15', NULL);
+
+INSERT INTO restaurant_holidays (restaurant_id, hoilday_date, reason)
+VALUES (1, '2025-07-16', '내부수리');
+
+SELECT DATE_FORMAT(rh.hoilday_date, '%Y-%m-%d') AS holiday_date,
+       rs.name                                  AS restaurant_name,
+       rh.reason
+FROM restaurant_holidays rh
+    JOIN restaurants rs ON rh.restaurant_id = rs.restaurant_id
+ORDER BY rh.hoilday_date, rs.restaurant_id;
+```
+**조회 결과**
+
+| holiday_date | restaurant_name | reason |
+| :--- | :--- | :--- |
+| 2025-07-15 | 서면옛날돼지국밥 | 내부수리 |
+| 2025-07-15 | 대연동크런치치킨 | NULL |
+| 2025-07-16 | 서면옛날돼지국밥 | 내부수리 |
+
+---
+
+#### 5. [문제 7] 메뉴 옵션 테이블(`menu_options`) 생성, 등록 및 옵션 포함 가격 조회
+```sql
 DROP TABLE IF EXISTS menu_options;
 CREATE TABLE menu_options (
     option_id         INT AUTO_INCREMENT,
@@ -619,10 +722,10 @@ CREATE TABLE menu_options (
     option_name       VARCHAR(30) NOT NULL,
     price_with_option INT DEFAULT 0,
 
-    CONSTRAINT pk_option_id     PRIMARY KEY (option_id),
+    CONSTRAINT pk_option_id      PRIMARY KEY (option_id),
     CONSTRAINT price_with_option CHECK (price_with_option >= 0),
-    CONSTRAINT fk_option_name   FOREIGN KEY (menu_id) REFERENCES menus (menu_id) ON DELETE CASCADE,
-    CONSTRAINT uq_option_name   UNIQUE (option_name, menu_id)
+    CONSTRAINT fk_option_name    FOREIGN KEY (menu_id) REFERENCES menus (menu_id) ON DELETE CASCADE,
+    CONSTRAINT uq_option_name    UNIQUE (option_name, menu_id)
 );
 
 INSERT INTO menu_options (menu_id, option_name, price_with_option) VALUES
@@ -630,13 +733,20 @@ INSERT INTO menu_options (menu_id, option_name, price_with_option) VALUES
     (35, '계란 프라이', 1500),
     (35, '면추가 없음', 0);
 
-SELECT m.name AS menu_name,
+SELECT m.name                           AS menu_name,
        option_name,
        (mo.price_with_option + m.price) AS price_with_option
 FROM menu_options mo
     INNER JOIN menus m ON m.menu_id = mo.menu_id
 ORDER BY price_with_option;
 ```
+**조회 결과**
+
+| menu_name | option_name | price_with_option |
+| :--- | :--- | :--- |
+| 짜장면 | 면추가 없음 | 7000 |
+| 짜장면 | 곱배기 | 8000 |
+| 짜장면 | 계란 프라이 | 8500 |
 
 ---
 
