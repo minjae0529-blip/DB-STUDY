@@ -1,8 +1,8 @@
 # DB-STUDY (MySQL & Java JDBC)
 
-국비지원 과정(대한민국인공지능아카데미 11기)에서 진행한 MySQL 쿼리 실습(`Ch01` ~ `Ch07`)과 IntelliJ 기반 Java JDBC 연동 코드를 정리한 저장소입니다.
+국비지원 과정(대한민국인공지능아카데미 11기)에서 진행한 MySQL 쿼리 실습(`Ch01` ~ `Ch08`, 쇼핑몰 종합 복습 문제집)과 IntelliJ 기반 Java JDBC 연동 코드를 정리한 저장소입니다.
 
-배달 플랫폼 예제 DB인 `hanip_delivery`(고객 30명, 가게 15곳, 메뉴 70개, 라이더 8명, 주문 563건, 주문상세 1,060건, 리뷰 260건)를 기반으로 테이블 조회, 집계, 조인, 서브쿼리, 윈도우 함수 실습을 진행했습니다.
+배달 플랫폼 예제 DB인 `hanip_delivery`(고객 30명, 가게 15곳, 메뉴 70개, 라이더 8명, 주문 563건, 주문상세 1,060건, 리뷰 260건)와 쇼핑몰 예제 DB인 `hanip_market`(회원 100명, 상품 80개, 주문 800건 등)을 기반으로 테이블 조회, 집계, 조인, 서브쿼리, 윈도우 함수, DDL/제약조건, DML/트랜잭션 실습을 진행했습니다.
 
 ---
 
@@ -22,14 +22,22 @@
 ```text
 DBMS_STUDY/
 ├── database/                         # 한입배달 DB 스키마(schema.sql) 및 초기 데이터(seed.sql)
-├── chapters/                         # 챕터별 교안, 문제(practice.md), 직접 작성한 쿼리(study01.sql)
+├── chapters/                         # 챕터별 교안, 문제(practice.md), 직접 작성한 쿼리(study.sql)
 │   ├── ch01-first-database/          # DB 기본 명령어 (SHOW, USE, DESC, LIMIT)
 │   ├── ch02-select-basics/           # SELECT, WHERE 조건절, ORDER BY, LIMIT/OFFSET
 │   ├── ch03-functions/               # 문자열·숫자·날짜 함수, CASE WHEN, IFNULL/COALESCE
 │   ├── ch04-aggregation/             # 집계 함수, GROUP BY, HAVING, ROLLUP (study01.sql)
 │   ├── ch05-join/                    # INNER JOIN, LEFT JOIN, 다중 조인 실습 (study01.sql)
 │   ├── ch06-subquery-window/         # 서브쿼리, EXISTS, CTE(WITH), 윈도우 함수 실습 (study01.sql)
-│   └── ch07-ddl-constraints/         # 테이블 설계(CREATE/ALTER) 및 제약조건(PK, FK, UNIQUE, CHECK)
+│   ├── ch07-ddl-constraints/         # 테이블 설계(CREATE/ALTER) 및 제약조건 (study.sql)
+│   ├── ch08-dml-transaction/         # INSERT/UPDATE/DELETE 및 트랜잭션 제어 (study.sql)
+│   ├── ch09-normalization-erd/       # 정규화(1NF~BCNF), 역정규화 및 ERD 설계
+│   ├── ch10-index-performance/       # B-Tree 인덱스, 복합 인덱스, EXPLAIN 실행 계획
+│   ├── ch11-view-privilege/          # VIEW 생성/활용 및 DCL(사용자 계정·권한 관리)
+│   └── ch12-procedure/               # 저장 프로시저(PROCEDURE), 변수, 조건/반복문
+├── drills/
+│   └── shopping-mall/                # 한입마켓(hanip_market) 쇼핑몰 DB 20문항 종합 복습 (practice.sql)
+├── project/                          # 2인 페어 DB 설계 미니 프로젝트 명세
 └── jdbc-practice/                    # Java - MySQL JDBC 연동 및 공통 Repository 구현
     ├── pom.xml
     └── src/main/java/com/korai/dbstudy/
@@ -750,7 +758,518 @@ ORDER BY price_with_option;
 
 ---
 
-# Part 2. Java JDBC 연동 실습 (`jdbc-practice`)
+## Ch08. 데이터 변경과 트랜잭션 (`ch08-dml-transaction`)
+
+테이블에 데이터를 추가·수정·삭제하는 DML(`INSERT`, `UPDATE`, `DELETE`)과, 여러 쿼리를 하나의 작업 단위로 묶어 일관성을 보장하는 트랜잭션(`START TRANSACTION`, `COMMIT`, `ROLLBACK`, `SAVEPOINT`)을 정리했습니다.
+
+### 핵심 개념 요약
+
+#### 1. `INSERT` — 데이터 추가
+- **단건 / 다건 등록**: `INSERT INTO 테이블 (컬럼...) VALUES (값1...), (값2...);` 형태로 한 번의 쿼리로 여러 행을 넣을 수 있습니다.
+- **`INSERT INTO ... SELECT`**: 기존 테이블의 데이터를 집계하거나 필터링한 결과를 다른 테이블(정산 테이블, 일별 매출 요약 테이블 등)에 바로 적재할 때 사용합니다.
+- **`LAST_INSERT_ID()`**: 방금 실행한 `INSERT`에서 생성된 `AUTO_INCREMENT` PK 값을 반환합니다. 주문(`orders`) 등록 직후 생성된 `order_id`를 받아 주문 상세(`order_items`)를 넣을 때 세션 변수(`SET @order_id = LAST_INSERT_ID()`)와 함께 사용합니다.
+
+#### 2. `UPDATE` & `DELETE` — 데이터 수정 및 삭제
+- **`WHERE` 절 필수**: `UPDATE`나 `DELETE`에서 `WHERE`를 빼먹으면 테이블 전체 행이 변경·삭제됩니다.
+  - 실무에서는 변경 전 동일한 `WHERE` 조건으로 `SELECT`를 먼저 실행해 대상 행과 건수를 확인한 뒤 실행합니다.
+  - MySQL Workbench 등에서는 PK 조건이 없는 수정·삭제를 막는 `sql_safe_updates` 모드가 기본 활성화되어 있어, 일반 조건으로 수정할 때는 일시적으로 해제(`SET SQL_SAFE_UPDATES = 0;`)해야 `Error Code: 1175`가 발생하지 않습니다.
+- **`UPDATE ... JOIN`**: 다른 테이블의 조건이나 집계 결과를 기준으로 값을 수정할 때 `UPDATE 테이블A JOIN 테이블B ON ... SET ... WHERE ...` 구문을 사용합니다.
+- **물리 삭제(`DELETE`) vs 논리 삭제(Soft Delete)**: 주문·회원·가게처럼 과거 이력 참조가 필요한 데이터는 `DELETE`로 행 자체를 지우지 않고 `is_open = FALSE`나 `deleted_at = NOW()`처럼 상태 컬럼만 `UPDATE`하여 보관합니다.
+
+#### 3. 트랜잭션(Transaction)과 ACID
+- **트랜잭션 제어어(TCL)**
+  - `START TRANSACTION;` : 트랜잭션 시작 (이후 변경 사항은 확정 전까지 임시 상태)
+  - `COMMIT;` : 모든 작업이 정상 처리되었을 때 DB에 영구 반영
+  - `ROLLBACK;` : 오류 발생 시 트랜잭션 시작 시점으로 전체 취소
+  - `SAVEPOINT 이름;` / `ROLLBACK TO 이름;` : 트랜잭션 내부에 중간 저장점을 만들고 해당 지점 이후 작업만 부분 취소
+- **주의사항**: MySQL은 기본적으로 `autocommit = 1` 상태이므로, `START TRANSACTION`을 선언하지 않으면 개별 `UPDATE`/`DELETE` 실행 즉시 자동 커밋되어 `ROLLBACK`으로 되돌릴 수 없습니다. 또한 `CREATE`, `ALTER`, `DROP`, `TRUNCATE` 같은 DDL은 실행 즉시 암묵적 커밋(Implicit Commit)이 일어납니다.
+
+---
+
+### 주요 실습 쿼리 (`chapters/ch08-dml-transaction/study.sql`)
+
+#### 1. 라이더 월별 정산 테이블(`rider_settlements`) 생성 및 `INSERT ... SELECT` 적재
+```sql
+CREATE TABLE rider_settlements (
+    settlement_id   INT PRIMARY KEY AUTO_INCREMENT,
+    rider_id        INT          NOT NULL,
+    settle_month    VARCHAR(7)   NOT NULL,
+    delivery_count  INT          NOT NULL,
+    total_commission INT         NOT NULL,
+    is_paid         BOOLEAN      NOT NULL DEFAULT false,
+    paid_at         DATETIME     NULL,
+
+    CONSTRAINT fk_rider_id FOREIGN KEY (rider_id) REFERENCES riders (rider_id),
+    CONSTRAINT uq_rider_month UNIQUE (rider_id, settle_month),
+    CONSTRAINT ck_settle_month CHECK (settle_month REGEXP '^[0-9]{4}-(0[1-9]|1[0-2])$'),
+    CONSTRAINT ck_delivery_count CHECK (delivery_count >= 0),
+    CONSTRAINT ck_total_commission CHECK (total_commission >= 0),
+    CONSTRAINT ck_settle_paid CHECK (
+        (is_paid = false AND paid_at IS NULL) OR
+        (is_paid = true AND paid_at IS NOT NULL)
+    )
+);
+
+-- 배달 완료 건을 라이더·월별로 집계해 정산 테이블에 일괄 등록
+INSERT INTO rider_settlements (rider_id, settle_month, delivery_count, total_commission)
+SELECT o.rider_id,
+       DATE_FORMAT(o.ordered_at, '%Y-%m') AS settle_month,
+       COUNT(*)                           AS delivery_count,
+       COUNT(*) * r.commission_per_order  AS total_commission
+FROM orders o
+    JOIN riders r ON o.rider_id = r.rider_id
+WHERE o.status = '배달완료'
+  AND o.rider_id IS NOT NULL
+GROUP BY o.rider_id, DATE_FORMAT(o.ordered_at, '%Y-%m'), r.commission_per_order;
+```
+
+---
+
+#### 2. `UPDATE ... JOIN`을 이용한 오토바이 라이더 정산 지급 처리
+```sql
+UPDATE rider_settlements rs
+    JOIN riders rd ON rs.rider_id = rd.rider_id
+SET rs.is_paid = true,
+    rs.paid_at = '2026-01-10 00:00:00'
+WHERE rs.settle_month = '2025-12'
+  AND rd.vehicle_type = '오토바이';
+
+SELECT rs.settlement_id,
+       rd.name,
+       rd.vehicle_type,
+       rs.settle_month,
+       rs.delivery_count,
+       rs.total_commission,
+       rs.is_paid,
+       rs.paid_at
+FROM rider_settlements rs
+    JOIN riders rd ON rs.rider_id = rd.rider_id
+WHERE rs.settle_month = '2025-12'
+ORDER BY rs.rider_id;
+```
+**조회 결과**
+
+| settlement_id | name | vehicle_type | settle_month | delivery_count | total_commission | is_paid | paid_at |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 6 | 박준혁 | 오토바이 | 2025-12 | 9 | 31500 | 1 | 2026-01-10 00:00:00 |
+| 12 | 최민수 | 오토바이 | 2025-12 | 12 | 42000 | 1 | 2026-01-10 00:00:00 |
+| 18 | 정태양 | 자전거 | 2025-12 | 5 | 15000 | 0 | NULL |
+| 24 | 한승우 | 오토바이 | 2025-12 | 8 | 32000 | 1 | 2026-01-10 00:00:00 |
+
+---
+
+#### 3. 주문 접수 + 주문 상세 등록 + 쿠폰 사용 처리 트랜잭션 (`LAST_INSERT_ID()`)
+```sql
+START TRANSACTION;
+
+-- 1단계: 주문서 생성
+INSERT INTO orders (customer_id, restaurant_id, rider_id, status, ordered_at, delivery_fee, discount_amount, payment_method)
+VALUES (1, 1, NULL, '주문접수', NOW(), 2000, 3000, '카카오페이');
+
+-- 방금 생성된 주문번호를 세션 변수에 저장
+SET @order_id = LAST_INSERT_ID();
+
+-- 2단계: menus 테이블에서 현재 단가를 조회하여 주문 상세 2건 등록
+INSERT INTO order_items (order_id, menu_id, quantity, unit_price)
+SELECT @order_id, menu_id, 2, price FROM menus WHERE menu_id = 1
+UNION ALL
+SELECT @order_id, menu_id, 1, price FROM menus WHERE menu_id = 4;
+
+-- 3단계: 고객 보유 쿠폰 사용 완료 처리
+UPDATE customer_coupons
+SET is_used = TRUE,
+    used_order_id = @order_id
+WHERE customer_coupon_id = 1
+  AND is_used = FALSE;
+
+SELECT @order_id AS new_order_id, ROW_COUNT() AS coupon_row_updated;
+
+COMMIT;
+```
+**조회 결과**
+
+| new_order_id | coupon_row_updated |
+| :--- | :--- |
+| 564 | 1 |
+
+---
+
+#### 4. [문제 5] 일별 매출 요약 테이블(`daily_sales`) 생성 및 2025년 7월 매출 적재
+```sql
+CREATE TABLE daily_sales (
+    sale_date     DATE PRIMARY KEY,
+    order_count   INT NOT NULL,
+    total_revenue INT NOT NULL
+);
+
+INSERT INTO daily_sales (sale_date, order_count, total_revenue)
+SELECT DATE(os.ordered_at)               AS sale_date,
+       COUNT(DISTINCT os.order_id)       AS order_count,
+       SUM(oi.unit_price * oi.quantity)  AS total_revenue
+FROM orders os
+    JOIN order_items oi ON os.order_id = oi.order_id
+WHERE os.status = '배달완료'
+  AND os.ordered_at >= '2025-07-01'
+  AND os.ordered_at < '2025-08-01'
+GROUP BY DATE(os.ordered_at)
+ORDER BY sale_date;
+
+SELECT *
+FROM daily_sales
+LIMIT 5;
+```
+**조회 결과**
+
+| sale_date | order_count | total_revenue |
+| :--- | :--- | :--- |
+| 2025-07-01 | 2 | 56000 |
+| 2025-07-02 | 3 | 69500 |
+| 2025-07-03 | 2 | 37000 |
+| 2025-07-04 | 1 | 21000 |
+| 2025-07-05 | 4 | 112000 |
+
+---
+
+#### 5. [문제 6] 배달완료 20건 이상 일반 고객 골드 등급 일괄 승급
+```sql
+UPDATE customers c
+    INNER JOIN (
+        SELECT customer_id
+        FROM orders
+        WHERE status = '배달완료'
+        GROUP BY customer_id
+        HAVING COUNT(*) >= 20
+    ) os ON c.customer_id = os.customer_id
+SET c.grade = '골드'
+WHERE c.grade = '일반';
+
+SELECT c.customer_id,
+       c.name,
+       c.grade,
+       COUNT(o.order_id) AS completed_orders
+FROM customers c
+    JOIN orders o ON c.customer_id = o.customer_id
+WHERE o.status = '배달완료'
+GROUP BY c.customer_id, c.name, c.grade
+HAVING COUNT(o.order_id) >= 20
+ORDER BY completed_orders DESC;
+```
+**조회 결과**
+
+| customer_id | name | grade | completed_orders |
+| :--- | :--- | :--- | :--- |
+| 1 | 김민준 | VIP | 32 |
+| 2 | 이서연 | VIP | 27 |
+| 3 | 박지훈 | 골드 | 24 |
+| 5 | 정우성 | 골드 | 22 |
+| 8 | 강하늘 | 골드 | 21 |
+| 11 | 임수향 | 골드 | 20 |
+
+---
+
+#### 6. [문제 8] `SAVEPOINT`를 이용한 트랜잭션 부분 취소 실습
+```sql
+START TRANSACTION;
+
+-- 1) 서면옛날돼지국밥(restaurant_id = 1) 전체 메뉴 500원 인상
+UPDATE menus
+SET price = price + 500
+WHERE restaurant_id = 1;
+
+SAVEPOINT sp1;
+
+-- 2) 해운대수제버거(restaurant_id = 2) 전체 메뉴 1,000원 인상
+UPDATE menus
+SET price = price + 1000
+WHERE restaurant_id = 2;
+
+-- 3) 해운대수제버거 인상분만 취소하고 돼지국밥 인상은 유지
+ROLLBACK TO sp1;
+COMMIT;
+
+SELECT restaurant_id, menu_id, name, price
+FROM menus
+WHERE restaurant_id IN (1, 2)
+  AND menu_id IN (1, 2, 6, 7)
+ORDER BY menu_id;
+```
+**조회 결과**
+
+| restaurant_id | menu_id | name | price |
+| :--- | :--- | :--- | :--- |
+| 1 | 1 | 돼지국밥 | 9500 |
+| 1 | 2 | 수육백반 | 12500 |
+| 2 | 6 | 클래식치즈버거 | 8500 |
+| 2 | 7 | 더블베이컨버거 | 10500 |
+
+---
+
+# Part 2. 종합 복습 문제집 — 한입마켓 쇼핑몰 DB (`drills/shopping-mall`)
+
+`Ch01` ~ `Ch06`(조인, 집계, 서브쿼리, 윈도우 함수, 집합 연산자) 내용을 종합 점검하기 위해 온라인 쇼핑몰 DB(`hanip_market`)를 대상으로 작성한 실습 쿼리입니다.
+
+### 주요 실습 쿼리 (`drills/shopping-mall/practice.sql`)
+
+#### 1. [문제 1] 대분류 카테고리별 상품 판매 실적 집계
+취소·환불 주문을 제외하고 대분류 카테고리별 주문 건수, 총 판매 수량, 총 판매 금액(`unit_price * quantity - discount`)을 집계합니다.
+```sql
+SELECT p1.category_name                       AS main_category,
+       COUNT(DISTINCT o.order_id)             AS order_count,
+       SUM(oi.quantity)                       AS total_qty,
+       SUM(oi.unit_price * oi.quantity - oi.discount) AS total_sales
+FROM categories p1
+    JOIN categories p2  ON p2.parent_id = p1.category_id
+    JOIN products pd    ON p2.category_id = pd.category_id
+    JOIN order_items oi ON pd.product_id = oi.product_id
+    JOIN orders o       ON oi.order_id = o.order_id
+WHERE o.status NOT IN ('취소', '환불')
+  AND p1.parent_id IS NULL
+GROUP BY p1.category_id, p1.category_name
+ORDER BY total_sales DESC;
+```
+**조회 결과**
+
+| main_category | order_count | total_qty | total_sales |
+| :--- | :--- | :--- | :--- |
+| 디지털/가전 | 248 | 362 | 41285000 |
+| 패션/의류 | 312 | 540 | 24610000 |
+| 뷰티/생활 | 275 | 498 | 13842000 |
+| 식품 | 290 | 685 | 9425000 |
+
+---
+
+#### 2. [문제 2] 지역별 회원 수 및 구매 전환율 (`LEFT JOIN` + `COUNT(DISTINCT)`)
+전체 가입 회원 중 실제 유효 주문(취소·환불 제외)을 1건 이상 발생시킨 회원의 비율을 지역별로 계산합니다.
+```sql
+SELECT m.region,
+       COUNT(DISTINCT m.member_id) AS total_members,
+       COUNT(DISTINCT o.member_id) AS buying_members,
+       ROUND(COUNT(DISTINCT o.member_id) / COUNT(DISTINCT m.member_id) * 100, 1) AS conversion_rate
+FROM members m
+    LEFT JOIN orders o
+           ON m.member_id = o.member_id
+          AND o.status NOT IN ('취소', '환불')
+GROUP BY m.region
+ORDER BY conversion_rate DESC, total_members DESC;
+```
+**조회 결과**
+
+| region | total_members | buying_members | conversion_rate |
+| :--- | :--- | :--- | :--- |
+| 서울 | 32 | 29 | 90.6 |
+| 경기 | 24 | 21 | 87.5 |
+| 부산 | 15 | 13 | 86.7 |
+| 대전 | 10 | 8 | 80.0 |
+| 대구 | 11 | 8 | 72.7 |
+| 광주 | 8 | 5 | 62.5 |
+
+---
+
+#### 3. [문제 4] 2025년 월별 × 결제수단별 매출 피벗표 (`CASE WHEN` + `SUM`)
+```sql
+SELECT DATE_FORMAT(o.ordered_at, '%Y-%m') AS order_month,
+       SUM(CASE WHEN o.payment_method = '카드' THEN oi.unit_price * oi.quantity - oi.discount ELSE 0 END)       AS card_sales,
+       SUM(CASE WHEN o.payment_method = '카카오페이' THEN oi.unit_price * oi.quantity - oi.discount ELSE 0 END) AS kakao_sales,
+       SUM(CASE WHEN o.payment_method = '네이버페이' THEN oi.unit_price * oi.quantity - oi.discount ELSE 0 END) AS naver_sales,
+       SUM(CASE WHEN o.payment_method = '무통장입금' THEN oi.unit_price * oi.quantity - oi.discount ELSE 0 END) AS bank_sales,
+       SUM(oi.unit_price * oi.quantity - oi.discount) AS total_sales
+FROM orders o
+    JOIN order_items oi ON o.order_id = oi.order_id
+WHERE o.status NOT IN ('취소', '환불')
+  AND o.ordered_at >= '2025-01-01'
+  AND o.ordered_at < '2026-01-01'
+GROUP BY DATE_FORMAT(o.ordered_at, '%Y-%m')
+ORDER BY order_month;
+```
+**조회 결과 (상위 6개월)**
+
+| order_month | card_sales | kakao_sales | naver_sales | bank_sales | total_sales |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 2025-01 | 3420000 | 1850000 | 1210000 | 450000 | 6930000 |
+| 2025-02 | 3180000 | 2140000 | 1390000 | 380000 | 7090000 |
+| 2025-03 | 3890000 | 2310000 | 1520000 | 510000 | 8230000 |
+| 2025-04 | 3560000 | 1980000 | 1440000 | 420000 | 7400000 |
+| 2025-05 | 4120000 | 2490000 | 1680000 | 590000 | 8880000 |
+| 2025-06 | 3750000 | 2210000 | 1490000 | 470000 | 7920000 |
+
+---
+
+#### 4. [문제 10] 소분류 카테고리별 최고가 상품 조회 (상관 서브쿼리)
+```sql
+SELECT c.category_name,
+       p.product_name,
+       p.brand,
+       p.price
+FROM products p
+    JOIN categories c ON p.category_id = c.category_id
+WHERE p.price = (
+    SELECT MAX(p2.price)
+    FROM products p2
+    WHERE p2.category_id = p.category_id
+)
+ORDER BY p.price DESC;
+```
+**조회 결과 (상위 5건)**
+
+| category_name | product_name | brand | price |
+| :--- | :--- | :--- | :--- |
+| 노트북/태블릿 | 울트라북 프로 16인치 | 테크원 | 1890000 |
+| 음향기기 | 노이즈캔슬링 헤드폰 XM | 사운드랩 | 420000 |
+| 아우터 | 구스다운 롱패딩 | 노스윈드 | 320000 |
+| 스킨케어 | 리페어 앰플 프레스티지 세트 | 보타니카 | 145000 |
+| 건강식품 | 6년근 홍삼정 골드 | 정관원 | 128000 |
+
+---
+
+#### 5. [문제 14] 회원별 누적 구매액 및 첫 `'VIP 달성'` 시점 표시 (`SUM() OVER` + `ROW_NUMBER() OVER`)
+회원별로 주문 시간순 누적 결제액을 구하고, 누적 결제액이 처음으로 50만 원 이상에 도달한 주문 행에만 `'VIP 달성'`을 표시합니다.
+```sql
+WITH order_totals AS (
+    SELECT m.member_id,
+           m.name,
+           o.order_id,
+           DATE_FORMAT(o.ordered_at, '%Y-%m-%d')          AS order_date,
+           SUM(oi.unit_price * oi.quantity - oi.discount) AS order_amount
+    FROM members m
+        JOIN orders o       ON m.member_id = o.member_id
+        JOIN order_items oi ON o.order_id = oi.order_id
+    WHERE o.status NOT IN ('취소', '환불')
+      AND m.member_id IN (1, 2, 3)
+    GROUP BY m.member_id, m.name, o.order_id, DATE_FORMAT(o.ordered_at, '%Y-%m-%d')
+),
+running_totals AS (
+    SELECT *,
+           SUM(order_amount) OVER (
+               PARTITION BY member_id
+               ORDER BY order_date, order_id
+               ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+           ) AS running_total
+    FROM order_totals
+),
+vip_check AS (
+    SELECT *,
+           CASE WHEN running_total >= 500000 THEN 1 ELSE 0 END AS is_vip_zone,
+           ROW_NUMBER() OVER (
+               PARTITION BY member_id, (CASE WHEN running_total >= 500000 THEN 1 ELSE 0 END)
+               ORDER BY order_date, order_id
+           ) AS rn
+    FROM running_totals
+)
+SELECT member_id,
+       name,
+       order_id,
+       order_date,
+       order_amount,
+       running_total,
+       CASE WHEN is_vip_zone = 1 AND rn = 1 THEN 'VIP 달성' ELSE '' END AS vip_milestone
+FROM vip_check
+ORDER BY member_id, order_date, order_id;
+```
+**조회 결과 (일부)**
+
+| member_id | name | order_id | order_date | order_amount | running_total | vip_milestone |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 1 | 김서준 | 12 | 2025-01-14 | 185000 | 185000 | |
+| 1 | 김서준 | 45 | 2025-02-03 | 240000 | 425000 | |
+| 1 | 김서준 | 89 | 2025-03-11 | 150000 | 575000 | VIP 달성 |
+| 1 | 김서준 | 134 | 2025-04-22 | 95000 | 670000 | |
+
+---
+
+#### 6. [문제 15] 회원의 첫 구매 대분류 카테고리 비중 (`ROW_NUMBER()` + `SUM(COUNT(*)) OVER ()`)
+각 회원의 생애 첫 유효 주문에서 가장 비싸게 산 상품의 대분류를 찾고, 전체 회원 중 해당 대분류로 입문한 회원 비율(`%`)을 계산합니다.
+```sql
+WITH first_orders AS (
+    SELECT o.member_id,
+           o.order_id,
+           ROW_NUMBER() OVER (PARTITION BY o.member_id ORDER BY o.ordered_at, o.order_id) AS order_rn
+    FROM orders o
+    WHERE o.status NOT IN ('취소', '환불')
+),
+first_order_top_item AS (
+    SELECT fo.member_id,
+           c1.category_name AS first_main_category,
+           ROW_NUMBER() OVER (
+               PARTITION BY fo.member_id
+               ORDER BY (oi.unit_price * oi.quantity - oi.discount) DESC, oi.product_id ASC
+           ) AS item_rn
+    FROM first_orders fo
+        JOIN order_items oi ON fo.order_id = oi.order_id
+        JOIN products p     ON oi.product_id = p.product_id
+        JOIN categories c2  ON p.category_id = c2.category_id
+        JOIN categories c1  ON c2.parent_id = c1.category_id
+    WHERE fo.order_rn = 1
+)
+SELECT first_main_category,
+       COUNT(*) AS member_count,
+       ROUND(COUNT(*) / SUM(COUNT(*)) OVER () * 100, 1) AS share_pct
+FROM first_order_top_item
+WHERE item_rn = 1
+GROUP BY first_main_category
+ORDER BY member_count DESC;
+```
+**조회 결과**
+
+| first_main_category | member_count | share_pct |
+| :--- | :--- | :--- |
+| 패션/의류 | 28 | 33.3 |
+| 디지털/가전 | 22 | 26.2 |
+| 뷰티/생활 | 19 | 22.6 |
+| 식품 | 15 | 17.9 |
+
+---
+
+#### 7. [문제 17 & 19] 집합 연산자 활용 (`UNION ALL`, `UNION`, `INTERSECT`)
+```sql
+-- [문제 17] 현역 회원(members)과 탈퇴 보관 회원(withdrawn_members)을 합쳐 2024년 분기별 가입자 수 집계
+WITH all_members AS (
+    SELECT member_id, joined_at, '현역' AS status FROM members
+    UNION ALL
+    SELECT member_id, joined_at, '탈퇴' AS status FROM withdrawn_members
+)
+SELECT CONCAT(YEAR(joined_at), '-Q', QUARTER(joined_at)) AS join_quarter,
+       COUNT(*)                                          AS total_signups,
+       SUM(CASE WHEN status = '현역' THEN 1 ELSE 0 END)  AS active_count,
+       SUM(CASE WHEN status = '탈퇴' THEN 1 ELSE 0 END)  AS withdrawn_count
+FROM all_members
+WHERE joined_at >= '2024-01-01'
+  AND joined_at < '2025-01-01'
+GROUP BY CONCAT(YEAR(joined_at), '-Q', QUARTER(joined_at))
+ORDER BY join_quarter;
+
+-- [문제 19] 찜(wishlists)과 장바구니(carts)의 UNION ALL / UNION / INTERSECT 건수 비교
+SELECT 'UNION ALL' AS set_type, COUNT(*) AS row_count
+FROM (
+    SELECT member_id, product_id FROM wishlists
+    UNION ALL
+    SELECT member_id, product_id FROM carts
+) t1
+UNION ALL
+SELECT 'UNION' AS set_type, COUNT(*) AS row_count
+FROM (
+    SELECT member_id, product_id FROM wishlists
+    UNION
+    SELECT member_id, product_id FROM carts
+) t2
+UNION ALL
+SELECT 'INTERSECT' AS set_type, COUNT(*) AS row_count
+FROM (
+    SELECT member_id, product_id FROM wishlists
+    INTERSECT
+    SELECT member_id, product_id FROM carts
+) t3;
+```
+**조회 결과 (`[문제 19]` 집합 연산 비교)**
+
+| set_type | row_count |
+| :--- | :--- |
+| UNION ALL | 235 |
+| UNION | 198 |
+| INTERSECT | 37 |
+
+---
+
+# Part 3. Java JDBC 연동 실습 (`jdbc-practice`)
 
 MySQL의 데이터를 Java 애플리케이션에서 조회하고 객체(`Menu`, `Customer`)로 변환하는 과정을 3단계로 나누어 작성했습니다.
 
