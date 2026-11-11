@@ -10,7 +10,8 @@ USE hanip_delivery09;
 -- 수업 준비
 -- -------------------------------------------------------------
 SELECT 'order_sheet' AS table_name, COUNT(*) AS row_count FROM order_sheet
-UNION ALL SELECT 'order_flat', COUNT(*) FROM order_flat;
+UNION ALL SELECT 'order_flat', COUNT(*) FROM order_flat
+UNION ALL SELECT 'rider_assign', COUNT(*) FROM rider_assign;
 
 
 -- -------------------------------------------------------------
@@ -105,6 +106,34 @@ HAVING COUNT(*) > 1;
 
 
 -- -------------------------------------------------------------
+-- 5-1. 제1정규형(1NF): 한 칸에 값 하나
+-- -------------------------------------------------------------
+SELECT s.order_id, seq.n,
+    SUBSTRING_INDEX(SUBSTRING_INDEX(s.menu_list, ', ', seq.n), ', ', -1) AS item
+FROM order_sheet s
+JOIN (SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3) seq
+  ON seq.n <= (CHAR_LENGTH(s.menu_list) - CHAR_LENGTH(REPLACE(s.menu_list, ', ', ''))) / 2 + 1
+ORDER BY s.order_id, seq.n;
+
+WITH pieces AS (
+    SELECT s.order_id,
+        SUBSTRING_INDEX(SUBSTRING_INDEX(s.menu_list, ', ', seq.n), ', ', -1) AS item
+    FROM order_sheet s
+    JOIN (SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3) seq
+      ON seq.n <= (CHAR_LENGTH(s.menu_list) - CHAR_LENGTH(REPLACE(s.menu_list, ', ', ''))) / 2 + 1
+), menu_lines AS (
+    SELECT order_id,
+        LEFT(item, CHAR_LENGTH(item) - CHAR_LENGTH(SUBSTRING_INDEX(item, ' ', -1)) - 1) AS menu_name,
+        CAST(SUBSTRING_INDEX(item, ' ', -1) AS UNSIGNED) AS quantity
+    FROM pieces
+)
+SELECT COUNT(*) AS line_rows,
+    (SELECT COUNT(*) FROM order_flat) AS order_flat_rows,
+    SUM(CASE WHEN menu_name = '물밀면' THEN quantity END) AS mul_milmyeon_sold
+FROM menu_lines;
+
+
+-- -------------------------------------------------------------
 -- 5-2. 제2정규형(2NF): 부분 종속 제거
 -- -------------------------------------------------------------
 CREATE TABLE nf_orders AS
@@ -151,6 +180,58 @@ FROM (
     JOIN nf_customers   c ON o.customer_phone  = c.customer_phone
     JOIN nf_restaurants r ON o.restaurant_name = r.restaurant_name
 ) diff;
+
+
+-- -------------------------------------------------------------
+-- 5-6. BCNF: 모든 결정자가 후보키
+-- -------------------------------------------------------------
+SELECT * FROM rider_assign ORDER BY restaurant_name, customer_name;
+
+SELECT COUNT(*) AS total_rows,
+    COUNT(DISTINCT customer_name, restaurant_name) AS by_customer_restaurant,
+    COUNT(DISTINCT customer_name, rider_name)      AS by_customer_rider,
+    COUNT(DISTINCT rider_name)                     AS by_rider,
+    (SELECT COUNT(*) FROM (SELECT rider_name FROM rider_assign GROUP BY rider_name
+                           HAVING COUNT(DISTINCT restaurant_name) > 1) t) AS rider_to_restaurant_violations
+FROM rider_assign;
+
+SELECT rider_name, restaurant_name, COUNT(*) AS rows_to_update
+FROM rider_assign
+WHERE rider_name = '하민호'
+GROUP BY rider_name, restaurant_name;
+
+CREATE TABLE nf_riders AS
+SELECT DISTINCT rider_name, restaurant_name FROM rider_assign;
+
+CREATE TABLE nf_customer_riders AS
+SELECT customer_name, rider_name FROM rider_assign;
+
+ALTER TABLE nf_riders          ADD CONSTRAINT pk_nf_riders          PRIMARY KEY (rider_name);
+ALTER TABLE nf_customer_riders ADD CONSTRAINT pk_nf_customer_riders PRIMARY KEY (customer_name, rider_name);
+
+SELECT (SELECT COUNT(*) FROM nf_riders) AS riders_rows,
+       (SELECT COUNT(*) FROM nf_customer_riders) AS customer_riders_rows;
+
+SELECT COUNT(*) AS lost_rows
+FROM (
+    SELECT customer_name, restaurant_name, rider_name FROM rider_assign
+    EXCEPT
+    SELECT cr.customer_name, r.restaurant_name, cr.rider_name
+    FROM nf_customer_riders cr
+    JOIN nf_riders r ON cr.rider_name = r.rider_name
+) diff;
+
+START TRANSACTION;
+
+INSERT INTO nf_customer_riders VALUES ('김민준', '노지환');   -- 노지환도 서면옛날돼지국밥 소속
+
+SELECT cr.customer_name, r.restaurant_name, COUNT(*) AS rider_count
+FROM nf_customer_riders cr
+JOIN nf_riders r ON cr.rider_name = r.rider_name
+GROUP BY cr.customer_name, r.restaurant_name
+HAVING COUNT(*) > 1;
+
+ROLLBACK;
 
 
 -- -------------------------------------------------------------

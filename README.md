@@ -1,8 +1,8 @@
 # DB-STUDY (MySQL & Java JDBC)
 
-국비지원 과정(대한민국인공지능아카데미 11기)에서 진행한 MySQL 쿼리 실습(`Ch01` ~ `Ch08`, 쇼핑몰 종합 복습 문제집)과 IntelliJ 기반 Java JDBC 연동 코드를 정리한 저장소입니다.
+국비지원 과정(대한민국인공지능아카데미 11기)에서 진행한 MySQL 쿼리 실습(`Ch01` ~ `Ch10`, 쇼핑몰 종합 복습 문제집)과 IntelliJ 기반 Java JDBC 연동 코드를 정리한 저장소입니다.
 
-배달 플랫폼 예제 DB인 `hanip_delivery`(고객 30명, 가게 15곳, 메뉴 70개, 라이더 8명, 주문 563건, 주문상세 1,060건, 리뷰 260건)와 쇼핑몰 예제 DB인 `hanip_market`(회원 100명, 상품 80개, 주문 800건 등)을 기반으로 테이블 조회, 집계, 조인, 서브쿼리, 윈도우 함수, DDL/제약조건, DML/트랜잭션 실습을 진행했습니다.
+배달 플랫폼 예제 DB인 `hanip_delivery`(고객 30명, 가게 15곳, 메뉴 70개, 라이더 8명, 주문 563건, 주문상세 1,060건, 리뷰 260건)와 쇼핑몰 예제 DB인 `hanip_market`(회원 100명, 상품 80개, 주문 800건 등)을 기반으로 테이블 조회, 집계, 조인, 서브쿼리, 윈도우 함수, DDL/제약조건, DML/트랜잭션, 정규화(1NF~BCNF), 뷰(VIEW)·인덱스(INDEX)·실행 계획(`EXPLAIN`) 실습을 진행했습니다.
 
 ---
 
@@ -31,10 +31,10 @@ DBMS_STUDY/
 │   ├── ch06-subquery-window/         # 서브쿼리, EXISTS, CTE(WITH), 윈도우 함수 실습 (study01.sql)
 │   ├── ch07-ddl-constraints/         # 테이블 설계(CREATE/ALTER) 및 제약조건 (study.sql)
 │   ├── ch08-dml-transaction/         # INSERT/UPDATE/DELETE 및 트랜잭션 제어 (study.sql)
-│   ├── ch09-normalization-erd/       # 정규화(1NF~BCNF), 역정규화 및 ERD 설계
-│   ├── ch10-index-performance/       # B-Tree 인덱스, 복합 인덱스, EXPLAIN 실행 계획
-│   ├── ch11-view-privilege/          # VIEW 생성/활용 및 DCL(사용자 계정·권한 관리)
-│   └── ch12-procedure/               # 저장 프로시저(PROCEDURE), 변수, 조건/반복문
+│   ├── ch09-modeling-normalization/  # 데이터 모델링, 정규화(1NF~BCNF), 반정규화 실습 (study01.sql)
+│   ├── ch10-view-index-user/         # VIEW, B-Tree 인덱스, EXPLAIN 실행 계획, 권한 관리 (study01.sql)
+│   ├── ch11-trigger/                 # 트리거(TRIGGER)를 활용한 이력 기록 및 무결성 검증
+│   └── ch12-procedure/               # 저장 프로시저(PROCEDURE), 함수, 커서
 ├── drills/
 │   └── shopping-mall/                # 한입마켓(hanip_market) 쇼핑몰 DB 20문항 종합 복습 (practice.sql)
 ├── project/                          # 2인 페어 DB 설계 미니 프로젝트 명세
@@ -1001,6 +1001,372 @@ ORDER BY menu_id;
 | 1 | 2 | 수육백반 | 12500 |
 | 2 | 6 | 클래식치즈버거 | 8500 |
 | 2 | 7 | 더블베이컨버거 | 10500 |
+
+---
+
+## Ch09. 데이터 모델링과 정규화 (`ch09-modeling-normalization`)
+
+엑셀 시트처럼 한 테이블에 여러 주제(고객, 가게, 메뉴, 주문)를 몰아넣었을 때 발생하는 **이상 현상(Anomaly)**을 확인하고, **함수 종속(Functional Dependency)**을 기준으로 테이블을 `1NF → 2NF → 3NF → BCNF` 순서로 분해하는 방법과 SQL 코드로 정규화를 수행하는 절차를 정리했습니다.
+
+### 핵심 개념 요약
+
+#### 1. 왜 정규화를 하는가 — 3대 이상 현상(Anomaly)
+
+| 이상 현상 | 발생 상황 | 원인 |
+| :--- | :--- | :--- |
+| **갱신 이상 (Update Anomaly)** | 고객 등급이나 전화번호가 바뀌었을 때 일부 주문 행만 수정되어 한 사람의 정보가 서로 다르게 남는 현상 | 같은 사실(고객·가게 정보)이 여러 행에 중복 저장됨 |
+| **삽입 이상 (Insert Anomaly)** | 아직 주문이 한 건도 없는 신메뉴나 신규 입점 가게는 `order_id`(PK)가 없어 테이블에 등록조차 할 수 없는 현상 | 메뉴·가게 정보가 주문 행에 종속되어 함께 저장됨 |
+| **삭제 이상 (Delete Anomaly)** | 유일한 주문 1건을 취소/삭제했더니 그 가게의 연락처나 고객 정보까지 통째로 증발하는 현상 | 서로 다른 주제(엔터티)가 한 테이블에 묶여 있음 |
+
+---
+
+#### 2. 정규화 단계별 나누는 기준 (`1NF` ~ `BCNF`)
+
+테이블을 나눌 때는 감으로 나누는 것이 아니라 **결정자(`X → Y`, X값이 같으면 Y값도 항상 같다)**와 **후보키(행을 유일하게 식별하는 최소 컬럼 조합)**를 기준으로 분해합니다.
+
+| 단계 | 나누는 기준 (제거 대상) | 판단 질문 및 해결 방법 | 실습 예시 |
+| :--- | :--- | :--- | :--- |
+| **제1정규형 (1NF)** | **원자값(Atomic Value)** 위반 제거 (다중값, 반복 컬럼) | 한 칸에 쉼표(`, `)로 여러 값이 들어 있거나 `photo1, photo2, photo3`처럼 반복되는 열이 있는가? → **한 칸에 값 하나만 오도록 행(Row)이나 별도 테이블로 분리** | `ex_rider_sheet`의 `zones`(`'해운대, 송정'`)를 행 단위로 쪼개기 |
+| **제2정규형 (2NF)** | **부분 함수 종속** 제거 | 복합 PK `(A, B)` 중 **일부(`A` 또는 `B` 단독)에만 종속**되는 일반 컬럼이 있는가? → **그 일부 키를 PK로 하는 별도 테이블로 분리** | `(order_id, menu_name)` 복합키에서 `order_id`에만 종속된 주문일시·고객·가게 정보를 `orders`로 분리 |
+| **제3정규형 (3NF)** | **이행 함수 종속** (`X → Y → Z`) 제거 | **키가 아닌 일반 컬럼(`Y`)이 다른 일반 컬럼(`Z`)을 결정**하는가? → **`Y`를 PK로 하는 테이블로 떼어 내고 원래 테이블에는 `Y`(또는 대리키 FK)만 남김** | `ex_coupon_sheet`에서 고객 전화번호가 고객명을 결정하고, 도서 시트(`book_flat`)에서 출판사·도서관·카테고리 정보를 각각 마스터 테이블로 분리 |
+| **BCNF** | **결정자가 후보키가 아닌 함수 종속** 제거 | 무언가를 결정하는 컬럼(`X → Y`)인데 정작 `X`가 후보키가 아닌가? → **`X`를 PK로 하는 테이블로 분리** | `(고객, 가게) → 담당기사` 테이블에서 `담당기사 → 소속가게` 규칙이 있을 때 `(기사, 가게)` 테이블 분리 |
+
+> **반정규화(역정규화)를 허용하는 기준**: `order_items.unit_price`처럼 **"시간이 지나 메뉴 가격(`menus.price`)이 바뀌더라도 주문 당시의 판매 단가를 그대로 보존해야 하는 이력 데이터"**이거나, 대용량 조회에서 `JOIN` 비용을 줄이기 위해 정합성 검증 수단(트랜잭션·배치)을 갖추고 의도적으로 남기는 경우에만 제한적으로 사용합니다.
+
+---
+
+#### 3. SQL 코드로 정규화를 수행하는 3단계 실무 패턴
+
+비정규화된 평면 테이블(`ex_coupon_sheet`, `book_flat` 등)을 SQL 코드로 정규화할 때는 아래 3단계를 순서대로 실행합니다.
+
+1. **1단계 (다중값 펴기 — 1NF)**: 한 셀에 `'서면, 전포, 범천'`처럼 쉼표로 묶인 문자열이 있으면 숫자 보조 테이블(`UNION ALL`)과 `SUBSTRING_INDEX(SUBSTRING_INDEX(열, ', ', n), ', ', -1)`을 조합해 행 단위로 분리합니다.
+2. **2단계 (독립 엔터티 테이블 생성 및 `SELECT DISTINCT` 적재)**: 반복되는 기준 정보(고객, 쿠폰, 출판사, 도서관, 카테고리 등)를 담을 테이블을 `AUTO_INCREMENT` 대리키(PK)로 생성한 뒤, `INSERT INTO 새테이블 SELECT DISTINCT null, 원본컬럼... FROM 원본테이블`로 중복 없이 적재합니다.
+3. **3단계 (`LEFT OUTER JOIN`으로 문자열을 외래키(`_id`)로 치환해 관계 테이블 적재)**: 원본 비정규 테이블에 방금 만든 마스터 테이블들을 `LEFT OUTER JOIN`으로 연결하여, 문자열(고객명, 출판사명, 도서관명 등) 대신 채번된 PK(`customer_id`, `publisher_id`, `library_id`)를 조회해 하위/매핑 테이블(`ex_customer_coupons`, `registration_books`)에 `INSERT`합니다.
+
+---
+
+### 주요 실습 쿼리 (`chapters/ch09-modeling-normalization/study01.sql`)
+
+#### 1. [1NF 실습] 한 칸에 쉼표로 들어있는 배달 구역(`zones`)을 행 단위로 분해
+`ex_rider_sheet`의 `zones` 컬럼(`'해운대, 송정'`, `'서면, 전포, 범천'` 등)을 숫자 테이블(`seq`)과 `SUBSTRING_INDEX`로 잘라 `ex_rider_sheet_2`에 한 줄씩 적재하고, 나아가 라이더(`ex_riders`)·구역(`ex_zones`)·담당구역 매핑(`ex_riding_zones`) 3개 테이블 구조로 분리합니다.
+```sql
+-- 1) 변환 전 원본 시트 확인
+SELECT * FROM ex_rider_sheet LIMIT 5;
+```
+**변환 전 (`ex_rider_sheet`)**
+
+| rider_name | phone | zones |
+| :--- | :--- | :--- |
+| 곽태호 | 010-3105-2205 | 해운대, 송정 |
+| 노지환 | 010-3102-2202 | 서면, 부전 |
+| 민경수 | 010-3106-2206 | 광안, 남천, 대연, 수영, 민락 |
+| 배성진 | 010-3101-2201 | 서면, 전포, 범천 |
+| 엄소희 | 010-3107-2207 | 대연, 용호 |
+
+```sql
+-- 2) 1NF 테이블 생성 및 SUBSTRING_INDEX + 번호표(seq) JOIN으로 다중값 분해 적재
+CREATE TABLE ex_rider_sheet_2 (
+    rider_id   INT PRIMARY KEY AUTO_INCREMENT,
+    rider_name VARCHAR(20) NOT NULL,
+    phone      VARCHAR(20) NOT NULL,
+    zone       VARCHAR(20) NOT NULL
+);
+
+INSERT INTO ex_rider_sheet_2
+SELECT 0,
+       rider_name,
+       phone,
+       SUBSTRING_INDEX(SUBSTRING_INDEX(ers.zones, ', ', seq.n), ', ', -1) AS zone
+FROM ex_rider_sheet ers
+    INNER JOIN (
+        SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5
+    ) seq ON seq.n <= (CHAR_LENGTH(ers.zones) - CHAR_LENGTH(REPLACE(ers.zones, ', ', ''))) / 2 + 1
+ORDER BY ers.rider_name;
+
+SELECT * FROM ex_rider_sheet_2 LIMIT 6;
+```
+**변환 후 (`ex_rider_sheet_2` 조회 결과)**
+
+| rider_id | rider_name | phone | zone |
+| :--- | :--- | :--- | :--- |
+| 1 | 곽태호 | 010-3105-2205 | 해운대 |
+| 2 | 곽태호 | 010-3105-2205 | 송정 |
+| 3 | 노지환 | 010-3102-2202 | 서면 |
+| 4 | 노지환 | 010-3102-2202 | 부전 |
+| 5 | 민경수 | 010-3106-2206 | 광안 |
+| 6 | 민경수 | 010-3106-2206 | 남천 |
+
+---
+
+#### 2. [2NF · 3NF 실습] 쿠폰 사용 장부(`ex_coupon_sheet`)를 고객 · 쿠폰 · 발급내역 3개 테이블로 정규화
+PK 없이 쿠폰 정보와 고객 정보가 한데 섞여 있던 `ex_coupon_sheet`에서 `SELECT DISTINCT`로 고객(`ex_customers`)과 쿠폰(`ex_coupons`)을 각각 분리한 뒤, `LEFT OUTER JOIN`으로 각 테이블의 PK를 매칭해 매핑 테이블(`ex_customer_coupons`)에 적재합니다.
+```sql
+-- 1) 고객, 쿠폰, 고객별 쿠폰 사용내역 테이블 생성
+CREATE TABLE ex_customers (
+    customer_id INT PRIMARY KEY AUTO_INCREMENT,
+    name        VARCHAR(20) NOT NULL,
+    phone       VARCHAR(20) NOT NULL
+);
+
+CREATE TABLE ex_coupons (
+    coupon_id       INT PRIMARY KEY AUTO_INCREMENT,
+    coupon_code     VARCHAR(20) NOT NULL,
+    coupon_name     VARCHAR(30) NOT NULL,
+    discount_amount INT         NOT NULL
+);
+
+CREATE TABLE ex_customer_coupons (
+    customer_coupon_id INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id        INT      NOT NULL,
+    coupon_id          INT      NOT NULL,
+    used_at            DATETIME NULL
+);
+
+-- 2) DISTINCT로 중복을 제거하여 고객·쿠폰 마스터 데이터 적재
+INSERT INTO ex_customers
+SELECT DISTINCT null, customer_name, customer_phone
+FROM ex_coupon_sheet;
+
+INSERT INTO ex_coupons
+SELECT DISTINCT null, coupon_code, coupon_name, discount_amount
+FROM ex_coupon_sheet;
+
+-- 3) 원본 시트와 마스터 테이블을 LEFT JOIN하여 ID(FK) 기반으로 매핑 테이블 적재
+INSERT INTO ex_customer_coupons
+SELECT null,
+       ec.customer_id,
+       e.coupon_id,
+       ecs.used_at
+FROM ex_coupon_sheet ecs
+    LEFT OUTER JOIN ex_customers ec
+                 ON ec.name = ecs.customer_name
+                AND ec.phone = ecs.customer_phone
+    LEFT OUTER JOIN ex_coupons e
+                 ON e.coupon_code = ecs.coupon_code;
+
+SELECT * FROM ex_customers LIMIT 5;
+```
+**조회 결과 (`ex_customers`)**
+
+| customer_id | name | phone |
+| :--- | :--- | :--- |
+| 1 | 윤지아 | 010-9936-4407 |
+| 2 | 한예린 | 010-3158-2276 |
+| 3 | 오승민 | 010-4269-5534 |
+| 4 | 최수아 | 010-5527-3018 |
+| 5 | 김민준 | 010-2841-5523 |
+
+---
+
+#### 3. [실전 데이터 정규화] 도서관 장서 평면 테이블(`book_flat`)을 5개 정규화 테이블로 분해
+공공데이터 형태의 단일 테이블(`book_flat`)에서 출판사(`publishers`), 카테고리(`categorys`), 도서관(`libraries`), 도서(`books`), 도서관별 소장도서 등록(`registration_books`)을 분리하고 `JOIN`으로 외래키(`library_id`, `book_id`, `category_id`)를 연결하는 쿼리입니다.
+```sql
+CREATE TABLE books (
+    book_id      INT PRIMARY KEY AUTO_INCREMENT,
+    book_type    VARCHAR(20) NOT NULL,
+    isbn         VARCHAR(20) NULL,
+    name         VARCHAR(50) NOT NULL,
+    author_name  VARCHAR(20) NOT NULL,
+    publisher_id INT         NULL,
+    poster_url   TEXT        NULL
+);
+
+CREATE TABLE libraries (
+    library_id INT PRIMARY KEY AUTO_INCREMENT,
+    name       VARCHAR(50) NOT NULL,
+    site_url   TEXT        NULL
+);
+
+CREATE TABLE publishers (
+    publisher_id INT PRIMARY KEY AUTO_INCREMENT,
+    name         VARCHAR(50) NOT NULL
+);
+
+CREATE TABLE categorys (
+    category_id INT PRIMARY KEY AUTO_INCREMENT,
+    name        VARCHAR(20) NOT NULL
+);
+
+CREATE TABLE registration_books (
+    registration_id INT PRIMARY KEY AUTO_INCREMENT,
+    library_id      INT NOT NULL,
+    book_id         INT NOT NULL,
+    category_id     INT NOT NULL
+);
+
+-- 마스터 테이블 중복 제거 적재
+INSERT INTO publishers
+SELECT DISTINCT null, 출판사
+FROM book_flat
+WHERE 출판사 IS NOT NULL
+ORDER BY 출판사;
+
+INSERT INTO categorys
+SELECT DISTINCT null, 카테고리
+FROM book_flat
+ORDER BY 카테고리;
+
+INSERT INTO libraries
+SELECT DISTINCT null, 도서관명, `도서관홈페이지 주소`
+FROM book_flat;
+
+-- 원본 시트와 각 마스터 테이블을 조인해 소장도서 매핑용 ID 추출
+SELECT null,
+       lb.library_id,
+       bk.book_id,
+       ct.category_id
+FROM book_flat bf
+    LEFT OUTER JOIN libraries lb ON lb.name = bf.도서관명
+    LEFT OUTER JOIN books bk     ON bk.name = bf.도서명 AND IFNULL(bk.author_name, '') = IFNULL(bf.저자명, '')
+    LEFT OUTER JOIN categorys ct ON ct.name = bf.카테고리;
+```
+**분리된 마스터 테이블 조회 결과 (`publishers`, `categorys`)**
+
+| publisher_id | name | category_id | name |
+| :--- | :--- | :--- | :--- |
+| 1 | (도서출판)MKDAYS | 1 | 기술과학 |
+| 2 | (주) 비전비엔피( 구) 비전코리아) | 2 | 다문화 |
+| 3 | (주) 아이디어스토리지 | 3 | 문학 |
+| 4 | (주)YBM시사 | 4 | 사회과학 |
+| 5 | (주)YBM시사닷컴 | 5 | 순수과학 |
+
+---
+
+## Ch10. 뷰(VIEW) · 인덱스(INDEX) · 실행 계획(`EXPLAIN`) (`ch10-view-index-user`)
+
+복잡한 조회 쿼리를 가상 테이블로 저장하는 **뷰(View)**와, 대용량 테이블에서 검색 속도를 높이는 **B-Tree 인덱스(Index)** 및 옵티마이저의 실행 계획을 확인하는 **`EXPLAIN`**을 정리했습니다.
+
+### 핵심 개념 요약
+
+#### 1. 뷰(VIEW) — 언제 쓰고 어떻게 동작하는가
+뷰는 데이터 자체를 물리적으로 저장하지 않고 **`SELECT` 쿼리 정의만 저장해 두는 가상 테이블**입니다. 뷰를 조회할 때마다 내부에 정의된 `SELECT`가 실시간으로 실행됩니다.
+
+- **주로 사용하는 3가지 상황**
+  1. **복잡한 다중 `JOIN`·집계 쿼리의 단순화**: 주문 테이블에 고객명·가게명·라이더명을 붙이는 4중 `JOIN` 쿼리나 월별 매출 집계 쿼리를 뷰(`v_names`, `v_store_monthly_sales`)로 만들어 두면, 이후에는 `SELECT * FROM v_names` 한 줄로 재사용할 수 있습니다.
+  2. **업무 규칙의 일관성 유지**: "취소 주문을 제외한 배달완료 건만 매출로 인정한다" 같은 조건을 뷰 안에 고정해 두면, 여러 개발자가 쿼리를 복사해 쓰다가 `WHERE` 조건을 빠뜨리는 실수를 막을 수 있습니다.
+  3. **민감 정보 보안 및 접근 권한 분리**: 고객 테이블(`customers`)에서 전화번호 중간 자리를 `010-****-5523`처럼 마스킹하고 이메일·상세주소를 뺀 뷰(`v_customers_masked`)를 만든 뒤, 인턴이나 외부 분석 계정에는 원본 테이블 권한 없이 **해당 뷰의 `SELECT` 권한만 부여(`GRANT SELECT`)**할 때 사용합니다.
+- **뷰 기본 문법**
+  ```sql
+  -- 뷰 생성 또는 수정
+  CREATE OR REPLACE VIEW 뷰이름 AS
+  SELECT ...;
+
+  -- 뷰에 저장된 SELECT 원문 확인
+  SHOW CREATE VIEW 뷰이름;
+
+  -- 뷰 삭제 (원본 테이블 데이터에는 영향 없음)
+  DROP VIEW 뷰이름;
+  ```
+  > **주의**: `GROUP BY`, 집계 함수, `DISTINCT`, `JOIN`이 포함된 뷰는 읽기 전용이며 뷰를 통한 `UPDATE`/`INSERT`가 불가능합니다(`Error Code: 1288`).
+
+---
+
+#### 2. 인덱스(INDEX)와 `EXPLAIN` — 언제 쓰고 언제 타지 않는가
+인덱스는 책 맨 뒤의 '찾아보기(색인)'처럼 특정 컬럼 값과 행 위치를 **B-Tree 자료구조로 미리 정렬해 둔 객체**입니다.
+
+- **인덱스를 생성하는 기준 vs 피해야 하는 기준**
+
+| 구분 | 대상 컬럼 및 상황 | 이유 |
+| :--- | :--- | :--- |
+| **자동 생성** | `PRIMARY KEY`, `UNIQUE`, `FOREIGN KEY` 컬럼 | 제약조건 생성 시 MySQL이 자동으로 인덱스를 생성함 (`orders.restaurant_id` 등) |
+| **직접 생성 추천** | `WHERE` 조건절, `JOIN` 연결 조건, `ORDER BY`에 **자주 등장**하고 **카디널리티(값의 종류/선택도)가 높은** 컬럼 | 예: 주문 일시(`ordered_at`), 가게명(`name`), 이메일 등 전체 데이터 중 소수의 행만 빠르게 걸러낼 때 유리 (`O(N)` 풀 스캔 → `O(log N)` 탐색) |
+| **생성 지양** | ① `INSERT`·`UPDATE`·`DELETE`가 매우 빈번한 테이블의 비핵심 컬럼<br>② 값의 종류가 2~3개뿐인 컬럼(`is_open`, 성별 등) | ① 데이터가 추가·수정·삭제될 때마다 B-Tree 인덱스도 매번 재정렬해야 하므로 **쓰기 성능이 저하**됨<br>② 전체 행의 30~50% 이상을 읽어야 하면 인덱스보다 풀 스캔이 더 빠름 |
+
+- **인덱스를 만들어도 못 타는 대표적인 3가지 경우 (주의사항)**
+
+| 인덱스를 못 쓰는 나쁜 쿼리 (`type: ALL` 풀 스캔) | 인덱스를 정상 사용하는 쿼리 (`type: ref` / `range`) | 이유 |
+| :--- | :--- | :--- |
+| `WHERE name LIKE '%버거%'` | `WHERE name LIKE '해운대%'` | B-Tree는 **앞글자부터** 가나다순 정렬되어 있으므로, 앞에 와일드카드(`%`)가 붙으면 정렬 순서를 활용할 수 없어 전체 행을 다 뒤져야 함 |
+| `WHERE DATE(ordered_at) = '2026-06-30'` | `WHERE ordered_at >= '2026-06-30' AND ordered_at < '2026-07-01'` | 인덱스에는 원본 `ordered_at` 값이 정렬되어 있으므로, **인덱스 컬럼을 함수나 연산(`price + 500`)으로 가공**하면 인덱스를 쓸 수 없음 |
+| 복합 인덱스 `(A, B)`에서 `WHERE B = ?` | `WHERE A = ?` 또는 `WHERE A = ? AND B >= ?` | 복합 인덱스는 첫 번째 컬럼(`A`) 기준으로 먼저 정렬되므로, 선행 컬럼(`A`) 없이 후행 컬럼(`B`)만 조건으로 주면 인덱스를 타지 못함 (**최좌측 접두사 규칙**) |
+
+- **`EXPLAIN` 실행 계획 핵심 컬럼 읽는 법**
+  - `type` (접근 방식, 왼쪽일수록 빠름): `const`(PK/UNIQUE 단건, 가장 빠름) → `ref`(일반 인덱스 동등 `=` 비교) → `range`(인덱스 범위 `>=`, `BETWEEN`, `'앞글자%'` 탐색) → `index`(인덱스 전체 스캔) → **`ALL`(풀 테이블 스캔, 개선 필요)**
+  - `possible_keys`: 옵티마이저가 사용할 수 있는 후보 인덱스 목록
+  - `key`: 실제로 선택된 인덱스 (`NULL`이면 인덱스를 타지 못한 것)
+  - `rows`: 결과를 찾기 위해 읽어야 할 것으로 예상되는 행 수
+
+---
+
+### 주요 실습 쿼리 (`chapters/ch10-view-index-user/study01.sql`)
+
+#### 1. 다중 조인 뷰(`v_names`) 생성 및 조회
+주문(`orders`), 고객(`customers`), 가게(`restaurants`), 라이더(`riders`) 4개 테이블을 조인해 각 ID와 이름을 한 번에 보여주는 `v_names` 뷰를 만들고 조회합니다.
+```sql
+CREATE OR REPLACE VIEW v_names AS
+SELECT od.order_id,
+       ct.customer_id,
+       ct.name AS customer_name,
+       rt.restaurant_id,
+       rt.name AS restaurant_name,
+       rd.rider_id,
+       rd.name AS rider_name
+FROM orders od
+    JOIN customers ct   ON ct.customer_id = od.customer_id
+    JOIN restaurants rt ON rt.restaurant_id = od.restaurant_id
+    LEFT JOIN riders rd ON rd.rider_id = od.rider_id;
+
+SELECT * FROM v_names LIMIT 5;
+SHOW CREATE VIEW v_names;
+```
+**조회 결과 (`SELECT * FROM v_names LIMIT 5`)**
+
+| order_id | customer_id | customer_name | restaurant_id | restaurant_name | rider_id | rider_name |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 4 | 19 | 유준호 | 1 | 서면옛날돼지국밥 | 6 | 민경수 |
+| 38 | 24 | 이하윤 | 1 | 서면옛날돼지국밥 | NULL | NULL |
+| 51 | 1 | 김민준 | 1 | 서면옛날돼지국밥 | 6 | 민경수 |
+| 62 | 2 | 이서연 | 1 | 서면옛날돼지국밥 | 4 | 전유나 |
+| 72 | 24 | 이하윤 | 1 | 서면옛날돼지국밥 | 6 | 민경수 |
+
+---
+
+#### 2. `CREATE INDEX`와 `LIKE` 와일드카드 위치에 따른 `EXPLAIN` 비교
+가게 이름에 `idx_restaurant_name` 인덱스를 생성하더라도, `LIKE '%버거%'`처럼 앞에 `%`가 들어가면 인덱스를 타지 못하고 풀 스캔(`type: ALL`)이 발생하는 것을 `EXPLAIN`으로 확인합니다.
+```sql
+SET @@explain_format = TRADITIONAL;
+
+-- 데이터가 삽입·삭제되면 인덱스 트리도 다시 정렬해야 하므로 꼭 필요한 컬럼에만 생성
+CREATE INDEX idx_restaurant_name ON restaurants(name);
+
+-- 1) 앞에 와일드카드(%)가 있는 경우 -> 인덱스를 못 타고 전체 행 검사 (type: ALL)
+EXPLAIN SELECT * FROM restaurants WHERE name LIKE '%버거%';
+
+-- 2) 앞글자가 고정된 경우 -> 인덱스 범위 탐색 (type: range)
+EXPLAIN SELECT * FROM restaurants WHERE name LIKE '해운대%';
+```
+**조회 결과 (`EXPLAIN` 비교)**
+
+| 쿼리 조건 | id | select_type | table | type | possible_keys | key | rows | Extra |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `WHERE name LIKE '%버거%'` | 1 | SIMPLE | restaurants | **ALL** | NULL | **NULL** | 15 | Using where |
+| `WHERE name LIKE '해운대%'` | 1 | SIMPLE | restaurants | **range** | idx_restaurant_name | **idx_restaurant_name** | 2 | Using index condition |
+
+---
+
+#### 3. FK 자동 인덱스와 `idx_ordered_at` 생성 후 `EXPLAIN` 실행 계획 확인
+외래키(`restaurant_id`)에 기본 생성되어 있는 인덱스와, 주문 일시(`ordered_at`)에 직접 생성한 인덱스가 동등 조건(`=`) 조회에서 어떻게 사용되는지 확인합니다.
+```sql
+-- 1) 외래키(restaurant_id) 조건 조회 -> FK 생성 시 자동으로 만들어진 인덱스를 탐 (type: ref)
+EXPLAIN
+SELECT *
+FROM orders
+WHERE restaurant_id = 10;
+
+-- 2) 주문일시(ordered_at) 인덱스 생성 후 조회 -> 563건 중 단 1건만 바로 탐색 (type: ref, rows: 1)
+CREATE INDEX idx_ordered_at ON orders(ordered_at);
+
+EXPLAIN
+SELECT *
+FROM orders
+WHERE ordered_at = '2026-01-02 12:48:43';
+```
+**조회 결과 (`EXPLAIN`)**
+
+| 조회 쿼리 | id | select_type | table | type | possible_keys | key | key_len | ref | rows | filtered |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `WHERE restaurant_id = 10` | 1 | SIMPLE | orders | **ref** | fk_orders_restaurant | **fk_orders_restaurant** | 4 | const | **31** | 100.00 |
+| `WHERE ordered_at = '2026-01-02 12:48:43'` | 1 | SIMPLE | orders | **ref** | idx_ordered_at | **idx_ordered_at** | 5 | const | **1** | 100.00 |
 
 ---
 

@@ -12,19 +12,21 @@ SHOW DATABASES LIKE 'hanip_delivery%';
 USE hanip_delivery09;
 ```
 
-> 이번 setup.sql에는 쿠폰 테이블(Ch08)에 더해, 한입배달 초창기 정산팀이 쓰던 **엑셀 주문장** 두 장이 테이블로 들어 있습니다. 6월 배달완료 주문으로 채웠습니다.
+> 이번 setup.sql에는 쿠폰 테이블(Ch08)에 더해, 한입배달 초창기 정산팀이 쓰던 **엑셀 주문장** 두 장(6월 배달완료 주문)과 BCNF 실습용 **전속 기사 배정표**(`rider_assign`)가 들어 있습니다. `ex_`로 시작하는 테이블은 실습 문제용 시트입니다.
 
 ```sql
 SELECT 'order_sheet' AS table_name, COUNT(*) AS row_count FROM order_sheet
-UNION ALL SELECT 'order_flat', COUNT(*) FROM order_flat;
+UNION ALL SELECT 'order_flat', COUNT(*) FROM order_flat
+UNION ALL SELECT 'rider_assign', COUNT(*) FROM rider_assign;
 ```
 
-<sub>▶ 실행 결과 · 2행</sub>
+<sub>▶ 실행 결과 · 3행</sub>
 
 | table_name | row_count |
 |---|---|
 | order_sheet | 97 |
 | order_flat | 178 |
+| rider_assign | 10 |
 
 
 ## 오늘의 요청
@@ -46,7 +48,7 @@ Ch07에서는 이미 정해진 테이블을 **만들었습니다**. 오늘은 �
 1. 요구사항 → 개념 → 논리 → 물리 모델의 순서를 설명한다.
 2. ERD에서 엔터티·속성·관계·**카디널리티**를 읽고, 그 관계를 쿼리로 확인한다.
 3. 한 테이블에 여러 주제를 넣었을 때 생기는 **이상 현상**(갱신·삽입·삭제)을 직접 재현한다.
-4. **함수 종속**을 판별하고, 1NF → 2NF → 3NF로 테이블을 분해한다.
+4. **함수 종속**과 **후보키**를 판별하고, 1NF → 2NF → 3NF → **BCNF**로 테이블을 직접 분해한다.
 5. 우리 스키마에 일부러 남긴 중복(**반정규화**)의 이유를 설명한다.
 6. 새 기능의 ERD를 그리고 제약조건까지 포함한 DDL로 옮긴다.
 
@@ -398,16 +400,73 @@ HAVING COUNT(*) > 1;
 | `customer_phone` — 키가 아님 | `customer_name`, `customer_grade` | `order_id → phone → name` **이행 종속** → 3NF 위반 |
 | `restaurant_name` — 키가 아님 | `restaurant_phone` | 이행 종속 → 3NF 위반 |
 
-## 5. 정규화 — 1NF → 2NF → 3NF
+## 5. 정규화 — 1NF → 2NF → 3NF → BCNF
 
 ### 5-1. 제1정규형(1NF): 한 칸에 값 하나
 
 | 위반 | 해결 |
 |---|---|
-| `menu_list = '돼지국밥 2, 수육 (중) 1'` | 메뉴 줄마다 한 행 → `order_flat` |
-| `phone1`, `phone2`, `phone3` 같은 반복 열 | 별도 테이블로 (7절 리뷰 사진에서 다시) |
+| `menu_list = '돼지국밥 2, 수육 (중) 1'` (한 칸에 값 여러 개) | 값 하나 = 한 행 → `order_flat` |
+| `photo1`, `photo2`, `photo3` 같은 반복 열 | 값 하나 = 한 행, 별도 테이블로 (7절 리뷰 사진에서 다시) |
 
-`order_sheet` → `order_flat`이 1NF로 가는 단계였습니다.
+`order_flat`은 정산팀이 손으로 다시 친 시트입니다. 그런데 `order_sheet`만 있었다면? **SQL로 직접 펼 수 있습니다.** 재료는 Ch03의 `SUBSTRING_INDEX`와 Ch06의 `UNION ALL`입니다.
+
+**① 칸 속 값을 n번째 조각으로 자르기.** `SUBSTRING_INDEX(문자열, ', ', n)`은 n번째 구분자 앞까지, 거기에 다시 `-1`을 주면 그중 마지막 조각입니다. 번호표(1, 2, 3)를 JOIN해서 주문 한 행을 메뉴 개수만큼 복제합니다.
+
+```sql
+SELECT s.order_id, seq.n,
+    SUBSTRING_INDEX(SUBSTRING_INDEX(s.menu_list, ', ', seq.n), ', ', -1) AS item
+FROM order_sheet s
+JOIN (SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3) seq
+  ON seq.n <= (CHAR_LENGTH(s.menu_list) - CHAR_LENGTH(REPLACE(s.menu_list, ', ', ''))) / 2 + 1
+ORDER BY s.order_id, seq.n;
+```
+
+<sub>▶ 실행 결과 · 178행 (상위 6행 표시)</sub>
+
+| order_id | n | item |
+|---|---|---|
+| 456 | 1 | 돼지국밥 2 |
+| 456 | 2 | 수육 (중) 1 |
+| 457 | 1 | 돼지국밥 2 |
+| 458 | 1 | 에그 베네딕트 1 |
+| 458 | 2 | 프렌치 토스트 2 |
+| 459 | 1 | 등심카츠 1 |
+
+
+> `ON` 조건은 "쉼표 개수 + 1 = 메뉴 개수"까지만 번호표를 붙이라는 뜻입니다. `', '`가 두 글자라서 줄어든 길이를 2로 나눕니다. 한 주문에 메뉴가 최대 3개라 번호표도 3까지면 충분합니다.
+
+**② 조각을 이름과 수량으로 나누기.** 마지막 공백 뒤가 수량, 그 앞이 메뉴 이름입니다(`수육 (중) 1`처럼 이름에 공백이 있어도 마지막 공백 기준이라 안전).
+
+```sql
+WITH pieces AS (
+    SELECT s.order_id,
+        SUBSTRING_INDEX(SUBSTRING_INDEX(s.menu_list, ', ', seq.n), ', ', -1) AS item
+    FROM order_sheet s
+    JOIN (SELECT 1 AS n UNION ALL SELECT 2 UNION ALL SELECT 3) seq
+      ON seq.n <= (CHAR_LENGTH(s.menu_list) - CHAR_LENGTH(REPLACE(s.menu_list, ', ', ''))) / 2 + 1
+), menu_lines AS (
+    SELECT order_id,
+        LEFT(item, CHAR_LENGTH(item) - CHAR_LENGTH(SUBSTRING_INDEX(item, ' ', -1)) - 1) AS menu_name,
+        CAST(SUBSTRING_INDEX(item, ' ', -1) AS UNSIGNED) AS quantity
+    FROM pieces
+)
+SELECT COUNT(*) AS line_rows,
+    (SELECT COUNT(*) FROM order_flat) AS order_flat_rows,
+    SUM(CASE WHEN menu_name = '물밀면' THEN quantity END) AS mul_milmyeon_sold
+FROM menu_lines;
+```
+
+<sub>▶ 실행 결과 · 1행</sub>
+
+| line_rows | order_flat_rows | mul_milmyeon_sold |
+|---|---|---|
+| 178 | 178 | 3 |
+
+
+펼친 행 수가 `order_flat`과 같고, 3-1절에서 못 구했던 **물밀면 판매 그릇 수**가 한 번에 나옵니다. 이렇게 한 칸에 하나씩만 들어 있는 상태가 1NF이고, 그다음부터는 **키**를 기준으로 나눕니다.
+
+> 실무에서는 이 펴기 쿼리를 **한 번만** 돌려 새 테이블로 옮기고(`CREATE TABLE … AS SELECT`), 그 뒤로는 1NF 테이블에만 씁니다. 매번 문자열을 자르는 건 임시방편입니다.
 
 ### 5-2. 제2정규형(2NF): 부분 종속 제거
 
@@ -507,10 +566,182 @@ FROM (
 
 > 신입 분석가의 첫 질문 "한 테이블에 다 넣으면 편하지 않아요?"의 답: **읽기는 편해 보이지만 쓰기가 위험합니다.** 고칠 때마다 모순(갱신 이상), 넣을 수 없는 정보(삽입 이상), 지우면 함께 사라지는 정보(삭제 이상)가 생깁니다. JOIN은 그 안전의 대가입니다.
 
-### 5-6. BCNF와 시험 포인트
+### 5-6. BCNF: 모든 결정자가 후보키
 
-- **BCNF**: "모든 결정자가 후보키"인 상태. 3NF보다 조금 더 엄격합니다. 실무 테이블은 대부분 3NF에서 BCNF도 만족하므로 개념만 알아 두면 됩니다.
-- 정보처리기사 단골: **1NF 원자값 → 2NF 부분 함수 종속 제거 → 3NF 이행 함수 종속 제거 → BCNF 결정자가 후보키**. 순서와 키워드를 짝지어 외우세요. ("도부이결다조": 도메인 원자값 · 부분 종속 · 이행 종속 · 결정자 · 다치 종속 · 조인 종속)
+3NF까지 오면 대부분 끝납니다. 그런데 **3NF인데도 이상 현상이 남는** 테이블이 있습니다. 한입배달 초창기, 기사가 가게에 **전속**이던 시절의 배정표입니다.
+
+```sql
+SELECT * FROM rider_assign ORDER BY restaurant_name, customer_name;
+```
+
+<sub>▶ 실행 결과 · 10행</sub>
+
+| customer_name | restaurant_name | rider_name |
+|---|---|---|
+| 김민준 | 서면옛날돼지국밥 | 배성진 |
+| 박지훈 | 서면옛날돼지국밥 | 노지환 |
+| 이서연 | 서면옛날돼지국밥 | 배성진 |
+| 최수아 | 서면옛날돼지국밥 | 노지환 |
+| 김민준 | 전포카츠 | 하민호 |
+| 이서연 | 전포카츠 | 하민호 |
+| 정우진 | 전포카츠 | 하민호 |
+| 김민준 | 해운대명가밀면 | 전유나 |
+| 박지훈 | 해운대명가밀면 | 곽태호 |
+| 정우진 | 해운대명가밀면 | 전유나 |
+
+
+업무 규칙은 두 개입니다.
+
+1. 고객은 **가게마다** 담당 기사가 한 명이다 → (`customer_name`, `restaurant_name`) → `rider_name`
+2. 기사는 **한 가게에만** 속한다 → `rider_name` → `restaurant_name`
+
+**후보키부터 찾습니다.** 후보키는 "행을 하나로 특정하는 최소한의 열 조합"입니다. PK인 (고객, 가게) 말고도, 규칙 2 때문에 (고객, 기사)를 알면 가게가 정해지므로 (고객, 기사)도 후보키입니다. 데이터로 확인합니다.
+
+```sql
+SELECT COUNT(*) AS total_rows,
+    COUNT(DISTINCT customer_name, restaurant_name) AS by_customer_restaurant,
+    COUNT(DISTINCT customer_name, rider_name)      AS by_customer_rider,
+    COUNT(DISTINCT rider_name)                     AS by_rider,
+    (SELECT COUNT(*) FROM (SELECT rider_name FROM rider_assign GROUP BY rider_name
+                           HAVING COUNT(DISTINCT restaurant_name) > 1) t) AS rider_to_restaurant_violations
+FROM rider_assign;
+```
+
+<sub>▶ 실행 결과 · 1행</sub>
+
+| total_rows | by_customer_restaurant | by_customer_rider | by_rider | rider_to_restaurant_violations |
+|---|---|---|---|---|
+| 10 | 10 | 10 | 5 | 0 |
+
+
+전체 행 수와 같은 조합이 후보키입니다. 그리고 `rider_name → restaurant_name`이 성립합니다(위반 0).
+
+**정규형을 판정합니다.**
+
+| 검사 | 결과 | 이유 |
+|---|---|---|
+| 1NF | ✔ | 한 칸에 값 하나 |
+| 2NF | ✔ | 키가 아닌 열(비주요 속성)이 **하나도 없음** — 세 열 모두 어떤 후보키의 일부 |
+| 3NF | ✔ | 같은 이유로 이행 종속될 비주요 속성이 없음 |
+| **BCNF** | ✘ | `rider_name`이 `restaurant_name`을 **결정**하는데, `rider_name`은 **후보키가 아님** |
+
+3NF는 "키가 아닌 열이 키가 아닌 열을 결정하지 말라"였습니다. 여기서 결정되는 `restaurant_name`은 후보키의 일부라 3NF는 이걸 문제 삼지 않습니다. BCNF는 더 단순하고 엄격합니다. **무엇을 결정하는 열(결정자)이면 무조건 후보키여야 한다.**
+
+**그래서 이상 현상이 남습니다.** 하민호 기사가 해운대명가밀면으로 옮기면?
+
+```sql
+SELECT rider_name, restaurant_name, COUNT(*) AS rows_to_update
+FROM rider_assign
+WHERE rider_name = '하민호'
+GROUP BY rider_name, restaurant_name;
+```
+
+<sub>▶ 실행 결과 · 1행</sub>
+
+| rider_name | restaurant_name | rows_to_update |
+|---|---|---|
+| 하민호 | 전포카츠 | 3 |
+
+
+"하민호는 어느 가게 소속"이라는 사실 하나가 3행에 흩어져 있습니다(갱신 이상). 신입 기사 민경수가 전포카츠에 왔는데 아직 담당 고객이 없으면 등록할 수 없고(삽입 이상), 곽태호의 유일한 고객 박지훈이 떠나면 "곽태호는 해운대명가밀면 소속"이라는 정보도 사라집니다(삭제 이상).
+
+**BCNF로 분해합니다.** 위반한 종속 `rider_name → restaurant_name`을 따로 떼고, 원래 테이블에는 결정자(`rider_name`)만 남깁니다.
+
+```sql
+CREATE TABLE nf_riders AS
+SELECT DISTINCT rider_name, restaurant_name FROM rider_assign;
+
+CREATE TABLE nf_customer_riders AS
+SELECT customer_name, rider_name FROM rider_assign;
+
+ALTER TABLE nf_riders          ADD CONSTRAINT pk_nf_riders          PRIMARY KEY (rider_name);
+ALTER TABLE nf_customer_riders ADD CONSTRAINT pk_nf_customer_riders PRIMARY KEY (customer_name, rider_name);
+
+SELECT (SELECT COUNT(*) FROM nf_riders) AS riders_rows,
+       (SELECT COUNT(*) FROM nf_customer_riders) AS customer_riders_rows;
+```
+
+<sub>▶ 실행 결과 · 1행</sub>
+
+| riders_rows | customer_riders_rows |
+|---|---|
+| 5 | 10 |
+
+
+이제 하민호의 소속은 `nf_riders` **한 행**이고, 고객이 없는 기사도 `nf_riders`에 등록할 수 있습니다. 두 테이블의 공통 열 `rider_name`이 `nf_riders`의 PK라서 JOIN하면 원래대로 돌아옵니다(무손실).
+
+```sql
+SELECT COUNT(*) AS lost_rows
+FROM (
+    SELECT customer_name, restaurant_name, rider_name FROM rider_assign
+    EXCEPT
+    SELECT cr.customer_name, r.restaurant_name, cr.rider_name
+    FROM nf_customer_riders cr
+    JOIN nf_riders r ON cr.rider_name = r.rider_name
+) diff;
+```
+
+<sub>▶ 실행 결과 · 1행</sub>
+
+| lost_rows |
+|---|
+| 0 |
+
+
+**대가도 있습니다.** 규칙 1 "고객은 가게마다 기사 한 명"은 원래 PK (고객, 가게)가 지켜 주었습니다. 나눈 뒤에는 (고객, 가게)가 **한 테이블에 함께 있지 않아서** 어떤 키도 이 규칙을 지키지 못합니다.
+
+```sql
+START TRANSACTION;
+
+INSERT INTO nf_customer_riders VALUES ('김민준', '노지환');   -- 노지환도 서면옛날돼지국밥 소속
+
+SELECT cr.customer_name, r.restaurant_name, COUNT(*) AS rider_count
+FROM nf_customer_riders cr
+JOIN nf_riders r ON cr.rider_name = r.rider_name
+GROUP BY cr.customer_name, r.restaurant_name
+HAVING COUNT(*) > 1;
+```
+
+<sub>▶ 실행 결과 · 1행</sub>
+
+| customer_name | restaurant_name | rider_count |
+|---|---|---|
+| 김민준 | 서면옛날돼지국밥 | 2 |
+
+
+에러 없이 들어갔고, 김민준 님에게 서면옛날돼지국밥 담당 기사가 **두 명**이 됐습니다. BCNF 분해는 항상 무손실이지만 **함수 종속을 보존하지 못할 수 있습니다.** 3NF 분해는 항상 둘 다 지킬 수 있습니다.
+
+```sql
+ROLLBACK;
+```
+
+
+| 선택 | 얻는 것 | 잃는 것 | 빈틈 메우기 |
+|---|---|---|---|
+| 3NF에서 멈춤 (`rider_assign` 유지) | 규칙 1을 PK가 지킴 | 기사 소속의 갱신·삽입·삭제 이상 | 기사 테이블(`rider_name` PK)을 따로 두고, `rider_assign`의 (기사, 가게)를 **복합 FK**로 그 테이블에 연결 |
+| BCNF로 분해 | 기사 소속 이상 제거 | 규칙 1을 키로 못 지킴 | 트리거(Ch11)나 프로시저(Ch12)로 검사 |
+
+> 실무 기본값은 **BCNF까지 나누고, 잃은 규칙은 다른 방법으로 지키기**입니다. 다만 잃는 규칙이 핵심 규칙이면 3NF에서 멈추기도 합니다. 어느 쪽이든 **무엇을 포기했는지 알고** 선택해야 합니다.
+
+### 5-7. 정규형 판정 순서와 시험 포인트
+
+테이블 하나를 받으면 이 순서로 묻습니다.
+
+1. **한 칸에 값이 하나인가?** 아니면 비정규형 → 행으로 펴기 (1NF)
+2. **후보키를 모두 찾았나?** 행 수 = `COUNT(DISTINCT 조합)`인 최소 조합. 이후 판정은 전부 후보키 기준
+3. **후보키의 일부에만 종속된 비주요 속성이 있나?** 있으면 2NF 위반 → 그 일부를 키로 떼어 내기
+4. **비주요 속성이 비주요 속성을 결정하나?** 있으면 3NF 위반 → 결정하는 열을 키로 떼어 내기
+5. **후보키가 아닌 결정자가 남았나?** 있으면 BCNF 위반 → 그 결정자를 키로 떼어 내기
+
+| 정규형 | 제거 대상 | 한 줄 요약 | 오늘의 예 |
+|---|---|---|---|
+| 1NF | 반복 그룹 · 다중값 | 한 칸에 값 하나 | `order_sheet` → `order_flat` |
+| 2NF | 부분 함수 종속 | 키 **전체**에 종속 | `order_id`에만 종속된 열 → `nf_orders` |
+| 3NF | 이행 함수 종속 | 키 **말고는** 아무것도 결정하지 않음 | 고객 · 가게 분리 |
+| BCNF | 후보키가 아닌 결정자 | **모든 결정자가 후보키** | `rider_assign` → 기사 분리 |
+
+- 정보처리기사 단골: **1NF 원자값 → 2NF 부분 함수 종속 제거 → 3NF 이행 함수 종속 제거 → BCNF 결정자가 후보키** → 4NF 다치 종속 → 5NF 조인 종속. 순서와 키워드를 짝지어 외우세요. ("도부이결다조")
+- 4NF · 5NF는 실무에서 드뭅니다. 3NF와 BCNF를 **직접 판정하고 분해할 수 있으면** 충분합니다.
 
 ## 6. 반정규화 — 일부러 남긴 중복
 
@@ -775,7 +1006,9 @@ ORDER BY r.created_at DESC;
 | 식별 / 비식별 | 부모 PK를 자기 PK에 포함 / 자기 PK + 일반 FK |
 | 이상 현상 | 갱신(모순) · 삽입(못 넣음) · 삭제(함께 사라짐) — 한 테이블에 여러 주제 |
 | 함수 종속 X → Y | X가 같으면 Y도 같다. `GROUP BY X HAVING COUNT(DISTINCT Y) > 1`로 검증 |
-| 1NF · 2NF · 3NF | 원자값 · 부분 종속 제거 · 이행 종속 제거 |
+| 후보키 | 행을 하나로 특정하는 최소 조합. 행 수 = `COUNT(DISTINCT 조합)`으로 후보 확인, 확정은 업무 규칙으로 |
+| 1NF · 2NF · 3NF · BCNF | 원자값 · 부분 종속 제거 · 이행 종속 제거 · **모든 결정자가 후보키** |
+| BCNF의 대가 | 항상 무손실이지만 함수 종속을 보존하지 못할 수 있음 → 3NF에서 멈추거나 트리거로 보완 |
 | 무손실 분해 | 나눈 테이블을 JOIN하면 원래대로. `EXCEPT`로 확인 |
 | 반정규화 | 그때 값(`unit_price`)은 필수, 성능용 중복은 이유가 생겼을 때 + 감시 |
 
