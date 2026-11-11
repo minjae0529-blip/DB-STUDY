@@ -50,3 +50,23 @@ select
 from
     orders
 where ordered_at = '2026-01-02 12:48:43';
+
+#계정 생성
+create user '@user1'@'localhost' identified by '1q2w3e4r!'; # 로컬 호스트일 때만 접근 가능
+
+#문자열 안에는 * 안쓰고 % 씀
+create user 'user1'@'%' identified by '1q2w3e4r!'; #외부에서 접근 가능
+
+grant select, insert on `hanip_delivery10`.customers to 'user1'@'%'; #hanip_delivery10에 있는 모든 테이블 조회 기능 권한 부여 user1하넽
+
+select  * from mysql.user;
+
+select * from customers;
+insert into customers
+values (null, '강민재', '010-1234-5678', 'test@gmail.com', '2001-05-29', '대연동', '베르디하우스', 'vip', 1, now())
+
+show grants  for 'user1'@'%';
+
+revoke select on `hanip_delivery10`.* from 'user1'@'%';
+revoke insert on `hanip_delivery10`.customers from 'user1'@'%';
+

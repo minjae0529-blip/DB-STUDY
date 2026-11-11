@@ -1237,9 +1237,9 @@ FROM book_flat bf
 
 ---
 
-## Ch10. 뷰(VIEW) · 인덱스(INDEX) · 실행 계획(`EXPLAIN`) (`ch10-view-index-user`)
+## Ch10. 뷰(VIEW) · 인덱스(INDEX) · 권한 관리(`GRANT` / `REVOKE`) (`ch10-view-index-user`)
 
-복잡한 조회 쿼리를 가상 테이블로 저장하는 **뷰(View)**와, 대용량 테이블에서 검색 속도를 높이는 **B-Tree 인덱스(Index)** 및 옵티마이저의 실행 계획을 확인하는 **`EXPLAIN`**을 정리했습니다.
+복잡한 조회 쿼리를 가상 테이블로 저장하는 **뷰(View)**, 대용량 테이블에서 검색 속도를 높이는 **B-Tree 인덱스(Index)** 및 실행 계획(**`EXPLAIN`**), 그리고 사용자 계정을 생성하고 권한을 제어하는 **DCL(`CREATE USER`, `GRANT`, `REVOKE`)**을 정리했습니다.
 
 ### 핵심 개념 요약
 
@@ -1290,6 +1290,47 @@ FROM book_flat bf
   - `possible_keys`: 옵티마이저가 사용할 수 있는 후보 인덱스 목록
   - `key`: 실제로 선택된 인덱스 (`NULL`이면 인덱스를 타지 못한 것)
   - `rows`: 결과를 찾기 위해 읽어야 할 것으로 예상되는 행 수
+
+---
+
+#### 3. 사용자 계정 관리와 권한 제어 (`CREATE USER`, `GRANT`, `REVOKE`)
+
+실무 운영 DB에서는 모든 권한을 가진 `root` 계정을 애플리케이션이나 작업자가 직접 쓰지 않고, **최소 권한 원칙**에 따라 계정별로 필요한 DB·테이블·명령어 권한만 부여합니다.
+
+- **기본 문법 및 한 번에 권한 주는 방법**
+  ```sql
+  -- 1) 계정 생성 ('아이디'@'접속호스트')
+  CREATE USER 'user1'@'localhost' IDENTIFIED BY '비밀번호'; -- 로컬 접속 전용
+  CREATE USER 'user1'@'%'         IDENTIFIED BY '비밀번호'; -- 외부 원격 접속 허용
+
+  -- 2) 특정 권한만 골라서 한 번에 부여 (쉼표로 나열)
+  GRANT SELECT, INSERT, UPDATE, DELETE ON `hanip_delivery10`.* TO 'user1'@'%';
+
+  -- 3) 특정 DB의 모든 권한(DDL + DML)을 한 번에 부여
+  GRANT ALL PRIVILEGES ON `hanip_delivery10`.* TO 'user1'@'%';
+
+  -- 4) 부여된 권한 확인
+  SHOW GRANTS FOR 'user1'@'%';
+
+  -- 5) 권한 회수 (REVOKE ... FROM)
+  REVOKE INSERT, DELETE ON `hanip_delivery10`.* FROM 'user1'@'%';
+  REVOKE ALL PRIVILEGES ON `hanip_delivery10`.* FROM 'user1'@'%';
+  ```
+
+- **`%` (호스트 문자열 와일드카드) 사용 시 유의점**
+  1. **문자열(`'...'`) 안에서는 `*`가 아니라 `%`를 사용**: SQL의 `LIKE '%버거%'`와 마찬가지로, 계정 호스트 문자열에서 "모든 IP/호스트 허용"을 뜻할 때는 `'%'`를 써야 합니다 (`'*'`로 쓰면 와일드카드가 아니라 글자 그대로 `*`라는 호스트명으로 인식됨).
+  2. **`'user1'@'localhost'`와 `'user1'@'%'`는 완전히 별개의 계정**: MySQL은 `(user, host)` 쌍으로 계정을 구분합니다. 따라서 비밀번호나 `GRANT`/`REVOKE` 권한도 각각 따로 관리되며, 내 컴퓨터(로컬)에서 접속할 때는 더 구체적인 호스트인 `'localhost'` 계정이 우선 매칭됩니다.
+  3. **보안 주의**: 운영 환경에서 `'%'`로 모든 외부 접속을 열어두면 무차별 대입 공격에 노출되므로, 웹 서버 고정 IP(`'10.0.1.25'`)나 사내망 대역(`'192.168.0.%'`)으로 범위를 좁혀 생성하는 것이 안전합니다.
+
+- **`*` (DB · 테이블 범위 지정) 사용 시 유의점**
+
+| 지정 방식                           | 적용 범위                                          | 유의사항                                                                                                  |
+| :---------------------------------- | :------------------------------------------------- | :-------------------------------------------------------------------------------------------------------- |
+| `ON *.*`                            | MySQL 서버 내 **모든 DB의 모든 테이블**            | 글로벌 권한으로, 일반 서비스 계정에 부여하면 다른 프로젝트 DB까지 접근·수정할 수 있어 위험함              |
+| `ON \`hanip_delivery10\`.*`         | `hanip_delivery10` DB의 **모든 테이블**            | 백엔드 서버 계정 등에 가장 많이 쓰는 방식. 단, `*`에는 백틱(`` ` ``)이나 따옴표(`'`)를 감싸지 않도록 주의 |
+| `ON \`hanip_delivery10\`.customers` | `hanip_delivery10` DB의 **`customers` 테이블 1개** | 특정 테이블(또는 보안 뷰)만 열어줄 때 사용                                                                |
+
+  > **`GRANT` 범위와 `REVOKE` 범위 불일치 주의**: 예를 들어 `GRANT SELECT, INSERT ON hanip_delivery10.customers TO 'user1'@'%';`처럼 **특정 테이블(`customers`) 단위**로 권한을 주었는데, 회수할 때 `REVOKE SELECT ON hanip_delivery10.* FROM 'user1'@'%';`처럼 **DB 전체(`.*`) 단위**로 회수하려고 하면 권한 수준(Level)이 달라 회수되지 않습니다 (`Error 1141: There is no such grant defined`). 반드시 **권한을 줄 때 지정했던 범위(`*.*` / `db.*` / `db.테이블`) 그대로 `REVOKE`** 해야 합니다.
 
 ---
 
@@ -1372,6 +1413,41 @@ WHERE ordered_at = '2026-01-02 12:48:43';
 | :----------------------------------------- | :-- | :---------- | :----- | :------ | :------------------- | :----------------------- | :------ | :---- | :----- | :------- |
 | `WHERE restaurant_id = 10`                 | 1   | SIMPLE      | orders | **ref** | fk_orders_restaurant | **fk_orders_restaurant** | 4       | const | **31** | 100.00   |
 | `WHERE ordered_at = '2026-01-02 12:48:43'` | 1   | SIMPLE      | orders | **ref** | idx_ordered_at       | **idx_ordered_at**       | 5       | const | **1**  | 100.00   |
+
+---
+
+#### 4. 계정 생성(`localhost` vs `%`) 및 `GRANT` / `REVOKE` 권한 제어 실습
+로컬 전용 계정(`@'localhost'`)과 외부 접속 허용 계정(`@'%'`)을 각각 생성하고, `customers` 테이블에 `SELECT, INSERT` 권한을 한 번에 부여한 뒤 `SHOW GRANTS`와 `REVOKE`로 권한을 확인·회수합니다.
+```sql
+-- 1) 계정 생성: 로컬 전용('localhost') vs 외부 접속 허용('%')
+-- 문자열 안에서는 와일드카드로 * 대신 %를 사용함
+CREATE USER '@user1'@'localhost' IDENTIFIED BY '1q2w3e4r!';
+CREATE USER 'user1'@'%'          IDENTIFIED BY '1q2w3e4r!';
+
+-- 생성된 계정 확인
+SELECT user, host FROM mysql.user WHERE user LIKE '%user1%';
+```
+**조회 결과 (`SELECT user, host FROM mysql.user`)**
+
+| user   | host      |
+| :----- | :-------- |
+| user1  | %         |
+| @user1 | localhost |
+
+```sql
+-- 2) customers 테이블에 SELECT, INSERT 권한을 한 번에 부여
+GRANT SELECT, INSERT ON `hanip_delivery10`.customers TO 'user1'@'%';
+
+-- 3) INSERT 권한 회수 및 현재 부여된 권한 확인
+REVOKE INSERT ON `hanip_delivery10`.customers FROM 'user1'@'%';
+SHOW GRANTS FOR 'user1'@'%';
+```
+**조회 결과 (`SHOW GRANTS FOR 'user1'@'%'`)**
+
+| Grants for user1@%                                            |
+| :------------------------------------------------------------ |
+| GRANT USAGE ON *.* TO `user1`@`%`                             |
+| GRANT SELECT ON `hanip_delivery10`.`customers` TO `user1`@`%` |
 
 ---
 
